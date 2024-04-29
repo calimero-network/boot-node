@@ -13,12 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Generate GitHub token
-        id: generate-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ vars.ACTIONS_APP_ID }}
-          private-key: ${{ secrets.ACTIONS_APP_PRIVATE_KEY }}
+      # - name: Generate GitHub token
+      #   id: generate-token
+      #   uses: actions/create-github-app-token@v1
+      #   with:
+      #     app-id: ${{ vars.ACTIONS_APP_ID }}
+      #     private-key: ${{ secrets.ACTIONS_APP_PRIVATE_KEY }}
 
       - name: Get version
         id: get_version
@@ -27,7 +27,8 @@ jobs:
       - name: Check if release exists
         id: check_release
         env:
-          GITHUB_OUTPUT: ${{ steps.generate-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
           RELEASE_URL=$(curl --silent "https://api.github.com/repos/calimero-network/relay-server/releases/tags/${{ steps.get_version.outputs.version }}" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
@@ -59,4 +60,5 @@ jobs:
             target/x86_64-unknown-linux-gnu/release/relay-server
             target/armv7-unknown-linux-gnueabihf/release/relay-server
         env:
-          GITHUB_OUTPUT: ${{ steps.generate-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
