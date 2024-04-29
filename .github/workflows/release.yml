@@ -47,18 +47,18 @@ jobs:
         run: cargo build --release --target=x86_64-unknown-linux-gnu
         if: steps.check_release.outputs.exists == 'false'
 
-      - name: Build for ARM Linux
-        run: cross build --release --target=armv7-unknown-linux-gnueabihf
-        if: steps.check_release.outputs.exists == 'false'
+      # - name: Build for ARM Linux
+      #   run: cross build --release --target=armv7-unknown-linux-gnueabihf
+      #   if: steps.check_release.outputs.exists == 'false'
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: steps.check_release.outputs.exists == 'false'
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
-          files: |
-            target/x86_64-unknown-linux-gnu/release/relay-server
-            target/armv7-unknown-linux-gnueabihf/release/relay-server
+          # files: |
+          #   target/x86_64-unknown-linux-gnu/release/relay-server
+          #   target/armv7-unknown-linux-gnueabihf/release/relay-server
         env:
           # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
