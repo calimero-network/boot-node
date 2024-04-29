@@ -13,32 +13,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # - name: Install Rust
-      #   uses: actions-rs/toolchain@v1
-      #   with:
-      #     toolchain: stable
-      #     override: true
-
-      - name: Install cross
-        run: cargo install cross
-
       - name: Get version
         id: get_version
-        run: echo "::set-output name=version::$(cargo read-manifest | jq -r '.version')"
+        run: echo "version=$(cargo read-manifest | jq -r '.version')" >> $GITHUB_OUTPUT
 
       - name: Check if release exists
         id: check_release
         run: |
-          RELEASE_URL=$(curl --silent "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.get_version.outputs.version }}" \
+          RELEASE_URL=$(curl --silent "https://api.github.com/repos/calimero-network/relay-server/releases/tags/${{ steps.get_version.outputs.version }}" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" | jq -r '.url')
           if [[ "$RELEASE_URL" != "null" ]]; then
-            echo "::set-output name=exists::true"
+            echo "exists=true" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=exists::false"
+            echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build for Linux
+      - name: Install cross
+        run: cargo install cross
+        if: steps.check_release.outputs.exists == 'false'
+
+      - name: Build for Intel Linux
         uses: actions-rs/cargo@v1
         if: steps.check_release.outputs.exists == 'false'
         with:
@@ -49,10 +44,6 @@ jobs:
         run: cross build --release --target=armv7-unknown-linux-gnueabihf
         if: steps.check_release.outputs.exists == 'false'
 
-      - name: Build for macOS
-        run: cross build --release --target=x86_64-apple-darwin
-        if: steps.check_release.outputs.exists == 'false'
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: steps.check_release.outputs.exists == 'false'
@@ -61,6 +52,5 @@ jobs:
           files: |
             target/x86_64-unknown-linux-gnu/release/relay-server
             target/armv7-unknown-linux-gnueabihf/release/relay-server
-            target/x86_64-apple-darwin/release/relay-server
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
