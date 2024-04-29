@@ -1,4 +1,4 @@
-name: Build and Release
+name: Release
 on:
   push:
     branches:
@@ -6,7 +6,7 @@ on:
       - feat/initial-implementation
 jobs:
   build:
-    name: Build and Release
+    name: Release
     runs-on: ubuntu-latest
 
     steps:
@@ -58,8 +58,7 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           files: |
             README.md
-            target/x86_64-unknown-linux-gnu/release/relay-server
-            target/armv7-unknown-linux-gnueabihf/release/relay-server
+            target/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
