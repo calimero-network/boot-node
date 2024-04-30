@@ -5,6 +5,7 @@ use libp2p::futures::prelude::*;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identify, identity, ping, relay, Multiaddr, Swarm};
 use tracing::info;
+use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
@@ -19,28 +20,35 @@ struct Behaviour {
 #[derive(Debug, Parser)]
 #[clap(name = "calimero relay")]
 struct Opt {
-    /// Fixed value to generate deterministic peer id
-    #[clap(long)]
-    secret_key_seed: u8,
+    /// The file with the protobuf encoded private key used to derive PeerId and sign network activity
+    #[clap(long, value_name = "PRIVATE_KEY")]
+    #[clap(env = "RELAY_SERVER_PRIVATE_KEY", hide_env_values = true)]
+    private_key: camino::Utf8PathBuf,
 
     /// The port used to listen on all interfaces
-    #[clap(long)]
+    #[clap(long, value_name = "PORT", default_value = "4001")]
+    #[clap(env = "RELAY_SERVER_PORT", hide_env_values = true)]
     port: u16,
 }
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .try_init();
+    tracing_subscriber::registry()
+        .with(EnvFilter::builder().parse(format!(
+            "info,{}",
+            std::env::var("RUST_LOG").unwrap_or_default()
+        ))?)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let opt = Opt::parse();
 
-    // Create a static known PeerId based on given secret
-    let local_key: identity::Keypair = generate_ed25519(opt.secret_key_seed);
-    info!("Peer id: {:?}", local_key.public().to_peer_id());
+    let mut bytes = std::fs::read(opt.private_key)?;
+    let keypair = identity::Keypair::from_protobuf_encoding(&mut bytes)?;
 
-    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(local_key)
+    info!("Peer id: {:?}", keypair.public().to_peer_id());
+
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_tcp(
             Default::default(),
@@ -76,13 +84,6 @@ async fn main() -> eyre::Result<()> {
     }
 }
 
-fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
-    let mut bytes = [0u8; 32];
-    bytes[0] = secret_key_seed;
-
-    identity::Keypair::ed25519_from_bytes(bytes).expect("only errors on wrong length")
-}
-
 async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>) {
     match event {
         SwarmEvent::Behaviour(event) => {
@@ -94,10 +95,10 @@ async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<Beha
                 swarm.add_external_address(observed_addr.clone());
             }
 
-            println!("{event:?}")
+            info!("{event:?}")
         }
         SwarmEvent::NewListenAddr { address, .. } => {
-            println!("Listening on {address:?}");
+            info!("Listening on {address:?}");
         }
         _ => {}
     }

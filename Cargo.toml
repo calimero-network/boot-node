@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 camino = "1.1.6"
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.4", features = ["env", "derive"] }
 eyre = "0.6.12"
 futures-util = "0.3.30"
 libp2p = { version = "0.53.2", features = ["full"] }

@@ -4,3 +4,5 @@ data/
 target/
 .DS_Store
 .vscode/
+
+private.key
