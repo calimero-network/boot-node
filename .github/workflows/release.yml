@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - feat/initial-implementation
 permissions: write-all
 jobs:
   build:
