@@ -21,18 +21,15 @@ jobs:
 
       - name: Install cross
         run: cargo install cross
-        if: steps.check_release.outputs.exists == 'false'
 
       - name: Build for Intel Linux
         run: cargo build --release --target=x86_64-unknown-linux-gnu
-        if: steps.check_release.outputs.exists == 'false'
 
       - name: Build for ARM Linux
         run: cross build --release --target=armv7-unknown-linux-gnueabihf
-        if: steps.check_release.outputs.exists == 'false'
 
   release:
-    name: Build
+    name: Release
     runs-on: ubuntu-latest
     needs: build
     steps:
