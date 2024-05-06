@@ -1,0 +1,21 @@
+name: Check
+on:
+  push:
+    branches:
+      - "**"
+jobs:
+  build:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Setup rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cross
+        run: cargo check --release
