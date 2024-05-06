@@ -6,7 +6,7 @@ on:
 permissions: write-all
 jobs:
   metadata:
-    name: Build
+    name: Get release metadata
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
