@@ -1,6 +1,6 @@
 [package]
 name = "dcutr-example"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["Calimero Limited <info@calimero.network>"]
 edition = "2021"
 repository = "https://github.com/calimero-network/relay-server"
@@ -10,7 +10,8 @@ license = "MIT OR Apache-2.0"
 camino = "1.1.6"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 eyre = "0.6.12"
-futures-util = "0.3.30"
+futures = "0.3.30"
+futures-timer = "3.0"
 libp2p = { version = "0.53.2", features = [
     "dcutr",
     "dns",
