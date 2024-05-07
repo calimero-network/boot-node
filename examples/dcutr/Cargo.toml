@@ -1,0 +1,34 @@
+[package]
+name = "dcutr-example"
+version = "0.0.0"
+authors = ["Calimero Limited <info@calimero.network>"]
+edition = "2021"
+repository = "https://github.com/calimero-network/relay-server"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+camino = "1.1.6"
+clap = { version = "4.5.4", features = ["derive", "env"] }
+eyre = "0.6.12"
+futures-util = "0.3.30"
+libp2p = { version = "0.53.2", features = [
+    "dcutr",
+    "dns",
+    "identify",
+    "macros",
+    "noise",
+    "ping",
+    "quic",
+    "relay",
+    "tokio",
+    "tcp",
+    "tls",
+    "yamux",
+] }
+multiaddr = "0.18.1"
+serde = "1.0.196"
+serde_json = "1.0.113"
+tokio = { version = "1.35.1", features = ["macros", "rt", "rt-multi-thread"] }
+toml = "0.8.9"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
