@@ -6,6 +6,7 @@ use futures::{executor::block_on, future::FutureExt, stream::StreamExt};
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{dcutr, identify, identity, noise, ping, relay, yamux, Multiaddr, PeerId};
 use multiaddr::Protocol;
+use tokio::io::AsyncBufReadExt;
 use tracing::info;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -173,8 +174,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     block_on(async {
+        let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+
         loop {
-            match swarm.next().await.unwrap() {
+            let event = tokio::select! {
+                Some(event) = swarm.next() => event,
+                Ok(Some(line)) = stdin.next_line() => {
+                    match line.trim() {
+                        "peers" => {
+                            for peer in swarm.connected_peers() {
+                                info!(peer=%peer, "Connected peer");
+                            }
+                        }
+                        _ => info!("Unknown command"),
+                    }
+                    continue;
+                }
+            };
+
+            match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
                     info!(%address, "Listening on address");
                 }
@@ -185,19 +203,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     info!("Relay accepted our reservation request");
                 }
                 SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
-                    info!(?event)
+                    info!(?event, "\x1b[33mrelay\x1b[0m");
                 }
                 SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => {
-                    info!(?event)
+                    info!(?event, "\x1b[32mdcutr\x1b[0m");
                 }
                 SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
-                    info!(?event)
+                    info!(?event, "\x1b[34midentify\x1b[0m");
                 }
                 SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
                 SwarmEvent::ConnectionEstablished {
                     peer_id, endpoint, ..
                 } => {
                     info!(peer=%peer_id, ?endpoint, "Established new connection");
+                }
+                SwarmEvent::ConnectionClosed {
+                    peer_id, endpoint, ..
+                } => {
+                    info!(peer=%peer_id, ?endpoint, "Closed connection");
                 }
                 SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                     info!(peer=?peer_id, "Outgoing connection failed: {error}");
