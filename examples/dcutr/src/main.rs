@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Some(event) = swarm.next() => {
                 match event {
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        info!(%address, "Listening on address");
+                        info!(%address, "\x1b[34mswarm\x1b[0m Listening on address");
                     }
                     event => panic!("{event:?}"),
                 }
@@ -132,14 +132,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             SwarmEvent::ConnectionEstablished { .. } => {}
             SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
             SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Sent { .. })) => {
-                info!("Told relay its public address");
+                info!("\x1b[33mrelay\x1b[0m Told relay its public address");
                 told_relay_observed_addr = true;
             }
             SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Received {
                 info: identify::Info { observed_addr, .. },
                 ..
             })) => {
-                info!(address=%observed_addr, "Relay told us our observed address");
+                info!(address=%observed_addr, "\x1b[33mrelay\x1b[0m Relay told us our observed address");
                 learned_observed_addr = true;
             }
             event => panic!("{event:?}"),
@@ -175,12 +175,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Ok(Some(line)) = stdin.next_line() => {
                 match line.trim() {
                     "peers" => {
-                        info!("Connected peers: {}", swarm.network_info().num_peers());
+                        info!("\x1b[34mswarm\x1b[0m Connected peers: {}", swarm.network_info().num_peers());
                         for peer in swarm.connected_peers() {
-                            info!(peer=%peer, "Connected peer");
+                            info!(peer=%peer, "\x1b[34mswarm\x1b[0m Connected peer");
                         }
                     }
-                    _ => info!("Unknown command"),
+                    _ => info!("\x1b[34mswarm\x1b[0m Unknown command"),
                 }
                 continue;
             }
@@ -188,13 +188,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         match event {
             SwarmEvent::NewListenAddr { address, .. } => {
-                info!(%address, "Listening on address");
+                info!(%address, "\x1b[34mswarm\x1b[0m Listening on address");
             }
             SwarmEvent::Behaviour(BehaviourEvent::RelayClient(
                 relay::client::Event::ReservationReqAccepted { .. },
             )) => {
                 assert!(opt.mode == Mode::Listen);
-                info!("Relay accepted our reservation request");
+                info!("\x1b[33mrelay\x1b[0m Relay accepted our reservation request");
             }
             SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
                 info!(?event, "\x1b[33mrelay\x1b[0m");
@@ -203,24 +203,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!(?event, "\x1b[32mdcutr\x1b[0m");
             }
             SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
-                info!(?event, "\x1b[34midentify\x1b[0m");
+                info!(?event, "\x1b[36midentify\x1b[0m");
             }
-            SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
+            SwarmEvent::Behaviour(BehaviourEvent::Ping(event)) => {
+                info!(?event, "\x1b[35mping\x1b[0m");
+            }
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                info!(peer=%peer_id, ?endpoint, "Established new connection");
+                info!(peer=%peer_id, ?endpoint, "\x1b[34mswarm\x1b[0m Connection established");
             }
             SwarmEvent::ConnectionClosed {
                 peer_id, endpoint, ..
             } => {
-                info!(peer=%peer_id, ?endpoint, "Closed connection");
+                info!(peer=%peer_id, ?endpoint, "\x1b[34mswarm\x1b[0m Connection closed");
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                info!(peer=?peer_id, "Outgoing connection failed: {error}");
+                info!(peer=?peer_id, "\x1b[34mswarm\x1b[0m Outgoing connection failed: {error}");
             }
             _ => {}
-        }
+        };
     }
 }
 
