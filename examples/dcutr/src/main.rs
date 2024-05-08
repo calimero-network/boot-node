@@ -182,6 +182,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Ok(Some(line)) = stdin.next_line() => {
                     match line.trim() {
                         "peers" => {
+                            info!("Connected peers: {}", swarm.network_info().num_peers());
                             for peer in swarm.connected_peers() {
                                 info!(peer=%peer, "Connected peer");
                             }
