@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     SwarmEvent::NewListenAddr { address, .. } => {
                         info!(%address, "\x1b[34mswarm\x1b[0m Listening on address");
                     }
-                    event => panic!("{event:?}"),
+                    event => info!("unexpected: {event:?}"),
                 }
             }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
@@ -142,7 +142,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!(address=%observed_addr, "\x1b[33mrelay\x1b[0m Relay told us our observed address");
                 learned_observed_addr = true;
             }
-            event => panic!("{event:?}"),
+            event => info!("unexpected: {event:?}"),
         }
 
         if learned_observed_addr && told_relay_observed_addr {
@@ -221,7 +221,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 info!(peer=?peer_id, "\x1b[34mswarm\x1b[0m Outgoing connection failed: {error}");
             }
-            _ => {}
+            event => info!(?event, "\x1b[34mswarm\x1b[0m"),
         };
     }
 }
