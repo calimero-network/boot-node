@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::{error::Error, time::Duration};
 
 use clap::Parser;
-use futures::{executor::block_on, future::FutureExt, stream::StreamExt};
+use libp2p::futures::prelude::*;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{dcutr, identify, identity, noise, ping, relay, yamux, Multiaddr, PeerId};
 use multiaddr::Protocol;
@@ -101,60 +101,54 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .unwrap();
 
     // Wait to listen on all interfaces.
-    block_on(async {
-        let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
-        loop {
-            futures::select! {
-                event = swarm.next() => {
-                    match event.unwrap() {
-                        SwarmEvent::NewListenAddr { address, .. } => {
-                            info!(%address, "Listening on address");
-                        }
-                        event => panic!("{event:?}"),
+    loop {
+        tokio::select! {
+            Some(event) = swarm.next() => {
+                match event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!(%address, "Listening on address");
                     }
-                }
-                _ = delay => {
-                    // Likely listening on all interfaces now, thus continuing by breaking the loop.
-                    break;
+                    event => panic!("{event:?}"),
                 }
             }
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                break;
+            }
         }
-    });
+    }
 
     // Connect to the relay server. Not for the reservation or relayed connection, but to (a) learn
     // our local public address and (b) enable a freshly started relay to learn its public address.
     swarm.dial(opt.relay_address.clone()).unwrap();
-    block_on(async {
-        let mut learned_observed_addr = false;
-        let mut told_relay_observed_addr = false;
 
-        loop {
-            match swarm.next().await.unwrap() {
-                SwarmEvent::NewListenAddr { .. } => {}
-                SwarmEvent::Dialing { .. } => {}
-                SwarmEvent::ConnectionEstablished { .. } => {}
-                SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
-                SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Sent {
-                    ..
-                })) => {
-                    info!("Told relay its public address");
-                    told_relay_observed_addr = true;
-                }
-                SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Received {
-                    info: identify::Info { observed_addr, .. },
-                    ..
-                })) => {
-                    info!(address=%observed_addr, "Relay told us our observed address");
-                    learned_observed_addr = true;
-                }
-                event => panic!("{event:?}"),
-            }
+    let mut learned_observed_addr = false;
+    let mut told_relay_observed_addr = false;
 
-            if learned_observed_addr && told_relay_observed_addr {
-                break;
+    loop {
+        match swarm.next().await.unwrap() {
+            SwarmEvent::NewListenAddr { .. } => {}
+            SwarmEvent::Dialing { .. } => {}
+            SwarmEvent::ConnectionEstablished { .. } => {}
+            SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Sent { .. })) => {
+                info!("Told relay its public address");
+                told_relay_observed_addr = true;
             }
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(identify::Event::Received {
+                info: identify::Info { observed_addr, .. },
+                ..
+            })) => {
+                info!(address=%observed_addr, "Relay told us our observed address");
+                learned_observed_addr = true;
+            }
+            event => panic!("{event:?}"),
         }
-    });
+
+        if learned_observed_addr && told_relay_observed_addr {
+            break;
+        }
+    }
 
     match opt.mode {
         Mode::Dial => {
@@ -173,63 +167,61 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    block_on(async {
-        let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
 
-        loop {
-            let event = tokio::select! {
-                Some(event) = swarm.next() => event,
-                Ok(Some(line)) = stdin.next_line() => {
-                    match line.trim() {
-                        "peers" => {
-                            info!("Connected peers: {}", swarm.network_info().num_peers());
-                            for peer in swarm.connected_peers() {
-                                info!(peer=%peer, "Connected peer");
-                            }
+    loop {
+        let event = tokio::select! {
+            Some(event) = swarm.next() => event,
+            Ok(Some(line)) = stdin.next_line() => {
+                match line.trim() {
+                    "peers" => {
+                        info!("Connected peers: {}", swarm.network_info().num_peers());
+                        for peer in swarm.connected_peers() {
+                            info!(peer=%peer, "Connected peer");
                         }
-                        _ => info!("Unknown command"),
                     }
-                    continue;
+                    _ => info!("Unknown command"),
                 }
-            };
-
-            match event {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    info!(%address, "Listening on address");
-                }
-                SwarmEvent::Behaviour(BehaviourEvent::RelayClient(
-                    relay::client::Event::ReservationReqAccepted { .. },
-                )) => {
-                    assert!(opt.mode == Mode::Listen);
-                    info!("Relay accepted our reservation request");
-                }
-                SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
-                    info!(?event, "\x1b[33mrelay\x1b[0m");
-                }
-                SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => {
-                    info!(?event, "\x1b[32mdcutr\x1b[0m");
-                }
-                SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
-                    info!(?event, "\x1b[34midentify\x1b[0m");
-                }
-                SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
-                SwarmEvent::ConnectionEstablished {
-                    peer_id, endpoint, ..
-                } => {
-                    info!(peer=%peer_id, ?endpoint, "Established new connection");
-                }
-                SwarmEvent::ConnectionClosed {
-                    peer_id, endpoint, ..
-                } => {
-                    info!(peer=%peer_id, ?endpoint, "Closed connection");
-                }
-                SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                    info!(peer=?peer_id, "Outgoing connection failed: {error}");
-                }
-                _ => {}
+                continue;
             }
+        };
+
+        match event {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                info!(%address, "Listening on address");
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::RelayClient(
+                relay::client::Event::ReservationReqAccepted { .. },
+            )) => {
+                assert!(opt.mode == Mode::Listen);
+                info!("Relay accepted our reservation request");
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::RelayClient(event)) => {
+                info!(?event, "\x1b[33mrelay\x1b[0m");
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::Dcutr(event)) => {
+                info!(?event, "\x1b[32mdcutr\x1b[0m");
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::Identify(event)) => {
+                info!(?event, "\x1b[34midentify\x1b[0m");
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::Ping(_)) => {}
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                info!(peer=%peer_id, ?endpoint, "Established new connection");
+            }
+            SwarmEvent::ConnectionClosed {
+                peer_id, endpoint, ..
+            } => {
+                info!(peer=%peer_id, ?endpoint, "Closed connection");
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                info!(peer=?peer_id, "Outgoing connection failed: {error}");
+            }
+            _ => {}
         }
-    })
+    }
 }
 
 fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {

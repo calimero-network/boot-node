@@ -18,8 +18,7 @@ jobs:
 
       - name: Get version
         id: get_version
-        working-directory: examples/dcutr
-        run: echo "version=dcutr-example-$(cargo read-manifest | jq -r '.version')" >> $GITHUB_OUTPUT
+        run: echo "version=dcutr-example-$(cargo read-manifest --manifest-path examples/dcutr/Cargo.toml | jq -r '.version')" >> $GITHUB_OUTPUT
 
       - name: Check if release exists
         id: check_release
@@ -44,20 +43,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install cross
-        working-directory: examples/dcutr
-        run: cargo install cross --version 0.2.5
+      - name: Setup rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Setup rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Build for Intel Linux
-        working-directory: examples/dcutr
-        run: cargo build --release --target=x86_64-unknown-linux-gnu
+        run: cargo build -p dcutr-example --release --target=x86_64-unknown-linux-gnu
 
       - name: Build for Aarch Linux
-        working-directory: examples/dcutr
-        run: cross build --release --target=aarch64-unknown-linux-gnu
+        run: cross build -p dcutr-example --release --target=aarch64-unknown-linux-gnu
 
       - name: Create artifacts directory
-        working-directory: examples/dcutr
         run: |
           mkdir -p artifacts
           cp target/x86_64-unknown-linux-gnu/release/dcutr-example artifacts/dcutr-example-x86_64-unknown-linux
@@ -68,6 +66,6 @@ jobs:
         with:
           tag_name: ${{ needs.metadata.outputs.version }}
           files: |
-            examples/dcutr/artifacts/*
+            artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
