@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - feat/dcutr-example
 permissions: write-all
 jobs:
   metadata:
