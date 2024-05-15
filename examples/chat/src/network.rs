@@ -28,6 +28,7 @@ struct Behaviour {
 
 pub async fn run(
     keypair: identity::Keypair,
+    port: u16,
     relay_address: Multiaddr,
 ) -> eyre::Result<(NetworkClient, mpsc::Receiver<types::NetworkEvent>)> {
     let (client, mut event_receiver, event_loop) = init(keypair).await?;
@@ -35,8 +36,8 @@ pub async fn run(
     tokio::spawn(event_loop.run());
 
     let swarm_listen: Vec<Multiaddr> = vec![
-        "/ip4/0.0.0.0/udp/0/quic-v1".parse()?,
-        "/ip4/0.0.0.0/tcp/0".parse()?,
+        format!("/ip4/0.0.0.0/udp/{}/quic-v1", port).parse()?,
+        format!("/ip4/0.0.0.0/tcp/{}", port).parse()?,
     ];
     for addr in swarm_listen {
         client.listen_on(addr.clone()).await?;

@@ -5,30 +5,63 @@ use libp2p::gossipsub;
 use libp2p::identity;
 use multiaddr::Multiaddr;
 use tokio::io::AsyncBufReadExt;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 mod network;
 
 #[derive(Debug, Parser)]
-#[clap(name = "DCUtR client example")]
+#[clap(name = "Chat example")]
 struct Opt {
+    /// The mode (interactive, echo).
+    #[clap(long)]
+    mode: Mode,
+
+    /// The port used to listen on all interfaces
+    #[clap(long)]
+    port: u16,
+
     /// Fixed value to generate deterministic peer id.
     #[clap(long)]
     secret_key_seed: u8,
 
-    /// The listening address
+    /// The listening address of a relay server to connect to.
     #[clap(long)]
     relay_address: Multiaddr,
+
+    /// Optional list of peer addresses to dial immediately after network bootstrap.
+    #[clap(long)]
+    dial_peer_addrs: Option<Vec<Multiaddr>>,
+
+    /// Optional list of gossip topic names to subscribe immediately after network bootstrap.
+    #[clap(long)]
+    gossip_topic_names: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Parser)]
+enum Mode {
+    Interactive,
+    Echo,
+}
+
+impl FromStr for Mode {
+    type Err = String;
+    fn from_str(mode: &str) -> Result<Self, Self::Err> {
+        match mode {
+            "interactive" => Ok(Mode::Interactive),
+            "echo" => Ok(Mode::Echo),
+            _ => Err("Expected either 'dial' or 'listen'".to_string()),
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::registry()
-        // "info,chat_example::network=debug,{}",
+        // "info,chat_example=debug,{}",
         .with(EnvFilter::builder().parse(format!(
-            "info,chat_example::network=debug,{}",
+            "info,{}",
             std::env::var("RUST_LOG").unwrap_or_default()
         ))?)
         .with(tracing_subscriber::fmt::layer())
@@ -39,22 +72,44 @@ async fn main() -> eyre::Result<()> {
     let keypair = generate_ed25519(opt.secret_key_seed);
 
     let (network_client, mut network_events) =
-        network::run(keypair, opt.relay_address.clone()).await?;
+        network::run(keypair, opt.port, opt.relay_address.clone()).await?;
 
-    let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+    if let Some(peer_addrs) = opt.dial_peer_addrs {
+        for addr in peer_addrs {
+            network_client.dial(addr).await?;
+        }
+    }
 
-    loop {
-        tokio::select! {
-            event = network_events.recv() => {
-                let Some(event) = event else {
-                    break;
-                };
-                handle_event(network_client.clone(), event).await?;
-            }
-            line = stdin.next_line() => {
-                if let Some(line) = line? {
-                    handle_line(network_client.clone(), line).await?;
+    if let Some(topic_names) = opt.gossip_topic_names {
+        for topic_name in topic_names {
+            let topic = gossipsub::IdentTopic::new(topic_name);
+            network_client.subscribe(topic).await?;
+        }
+    }
+
+    match opt.mode {
+        Mode::Interactive => {
+            let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
+
+            loop {
+                tokio::select! {
+                    event = network_events.recv() => {
+                        let Some(event) = event else {
+                            break;
+                        };
+                        handle_network_event(Mode::Interactive, network_client.clone(), event).await?;
+                    }
+                    line = stdin.next_line() => {
+                        if let Some(line) = line? {
+                            handle_line(network_client.clone(), line).await?;
+                        }
+                    }
                 }
+            }
+        }
+        Mode::Echo => {
+            while let Some(event) = network_events.recv().await {
+                handle_network_event(Mode::Echo, network_client.clone(), event).await?;
             }
         }
     }
@@ -69,8 +124,9 @@ fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
     identity::Keypair::ed25519_from_bytes(bytes).expect("only errors on wrong length")
 }
 
-async fn handle_event(
-    _: network::client::NetworkClient,
+async fn handle_network_event(
+    mode: Mode,
+    network_client: network::client::NetworkClient,
     event: network::types::NetworkEvent,
 ) -> eyre::Result<()> {
     match event {
@@ -85,6 +141,28 @@ async fn handle_event(
                 "Identify received from {:?} at {:?}",
                 peer_id, observed_addr
             );
+        }
+        network::types::NetworkEvent::Message { id, message } => {
+            let text = String::from_utf8_lossy(&message.data);
+            info!("Message from {:?}: {:?}", id, text);
+
+            match mode {
+                Mode::Echo => {
+                    let text = format!("Echo, original: '{}'", text);
+
+                    match network_client
+                        .publish(message.topic, text.into_bytes())
+                        .await
+                    {
+                        Ok(_) => info!("Echoed message back"),
+                        Err(err) => error!(%err, "Failed to echo message back"),
+                    };
+                }
+                _ => {}
+            }
+        }
+        network::types::NetworkEvent::ListeningOn { address, .. } => {
+            info!("Listening on: {}", address);
         }
         event => {
             info!("Unhandled event: {:?}", event);
