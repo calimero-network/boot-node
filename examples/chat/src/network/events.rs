@@ -44,7 +44,7 @@ impl EventLoop {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                info!(peer=%peer_id, ?endpoint, "Connection established");
+                debug!(peer=%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { address, .. } => {
                         let dial_preference = match DialPreference::try_from(&address) {
@@ -116,7 +116,7 @@ impl EventLoop {
                 );
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                info!(%error, "Outgoing connection error");
+                debug!(%error, ?peer_id, "Outgoing connection error");
                 if let Some(peer_id) = peer_id {
                     if let Some(entry) = self.pending_dial.remove(&peer_id) {
                         let _ = entry.sender.send(Err(eyre::eyre!(error)));
@@ -129,7 +129,7 @@ impl EventLoop {
             SwarmEvent::Dialing {
                 peer_id: Some(peer_id),
                 ..
-            } => debug!("Dialing peer: {}", peer_id),
+            } => trace!("Dialing peer: {}", peer_id),
             SwarmEvent::ExpiredListenAddr { address, .. } => {
                 trace!("Expired listen address: {}", address)
             }

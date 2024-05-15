@@ -3,8 +3,10 @@ use std::str::FromStr;
 use clap::Parser;
 use libp2p::gossipsub;
 use libp2p::identity;
+use libp2p::PeerId;
 use multiaddr::Multiaddr;
 use tokio::io::AsyncBufReadExt;
+use tracing::debug;
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -51,7 +53,7 @@ impl FromStr for Mode {
         match mode {
             "interactive" => Ok(Mode::Interactive),
             "echo" => Ok(Mode::Echo),
-            _ => Err("Expected either 'dial' or 'listen'".to_string()),
+            _ => Err("Expected either 'interactive' or 'echo'".to_string()),
         }
     }
 }
@@ -72,21 +74,24 @@ async fn main() -> eyre::Result<()> {
     let keypair = generate_ed25519(opt.secret_key_seed);
 
     let (network_client, mut network_events) =
-        network::run(keypair, opt.port, opt.relay_address.clone()).await?;
+        network::run(keypair.clone(), opt.port, opt.relay_address.clone()).await?;
 
     if let Some(peer_addrs) = opt.dial_peer_addrs {
         for addr in peer_addrs {
+            info!("Dialing peer: {}", addr);
             network_client.dial(addr).await?;
         }
     }
 
     if let Some(topic_names) = opt.gossip_topic_names {
         for topic_name in topic_names {
+            info!("Subscribing to topic: {}", topic_name);
             let topic = gossipsub::IdentTopic::new(topic_name);
             network_client.subscribe(topic).await?;
         }
     }
 
+    let peer_id = keypair.public().to_peer_id();
     match opt.mode {
         Mode::Interactive => {
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
@@ -97,7 +102,7 @@ async fn main() -> eyre::Result<()> {
                         let Some(event) = event else {
                             break;
                         };
-                        handle_network_event(Mode::Interactive, network_client.clone(), event).await?;
+                        handle_network_event(network_client.clone(), event, peer_id, false).await?;
                     }
                     line = stdin.next_line() => {
                         if let Some(line) = line? {
@@ -109,7 +114,7 @@ async fn main() -> eyre::Result<()> {
         }
         Mode::Echo => {
             while let Some(event) = network_events.recv().await {
-                handle_network_event(Mode::Echo, network_client.clone(), event).await?;
+                handle_network_event(network_client.clone(), event, peer_id, true).await?;
             }
         }
     }
@@ -124,42 +129,49 @@ fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
     identity::Keypair::ed25519_from_bytes(bytes).expect("only errors on wrong length")
 }
 
+const LINE_START: &str = ">>>>>>>>>> ";
+
 async fn handle_network_event(
-    mode: Mode,
     network_client: network::client::NetworkClient,
     event: network::types::NetworkEvent,
+    peer_id: PeerId,
+    is_echo: bool,
 ) -> eyre::Result<()> {
     match event {
         network::types::NetworkEvent::IdentifySent { peer_id } => {
-            info!("Identify sent to {:?}", peer_id);
+            debug!("Identify sent to {:?}", peer_id);
         }
         network::types::NetworkEvent::IdentifyReceived {
             peer_id,
             observed_addr,
         } => {
-            info!(
+            debug!(
                 "Identify received from {:?} at {:?}",
                 peer_id, observed_addr
             );
         }
-        network::types::NetworkEvent::Message { id, message } => {
+        network::types::NetworkEvent::Message { message, .. } => {
             let text = String::from_utf8_lossy(&message.data);
-            info!("Message from {:?}: {:?}", id, text);
+            println!("{LINE_START} Received message: {:?}", text);
 
-            match mode {
-                Mode::Echo => {
-                    let text = format!("Echo, original: '{}'", text);
-
-                    match network_client
-                        .publish(message.topic, text.into_bytes())
-                        .await
-                    {
-                        Ok(_) => info!("Echoed message back"),
-                        Err(err) => error!(%err, "Failed to echo message back"),
-                    };
+            if is_echo {
+                let text = format!("echo ({}): '{}'", peer_id, text);
+                if text.starts_with("echo") {
+                    debug!("Ignoring echo message");
+                    return Ok(());
                 }
-                _ => {}
+
+                match network_client
+                    .publish(message.topic, text.into_bytes())
+                    .await
+                {
+                    Ok(_) => debug!("Echoed message back"),
+                    Err(err) => error!(%err, "Failed to echo message back"),
+                };
             }
+        }
+        network::types::NetworkEvent::Subscribed { topic, .. } => {
+            debug!("Subscribed to {:?}", topic);
         }
         network::types::NetworkEvent::ListeningOn { address, .. } => {
             info!("Listening on: {}", address);
@@ -185,7 +197,7 @@ async fn handle_line(
             let args = match args {
                 Some(args) => args,
                 None => {
-                    println!("Usage: dial <multiaddr>");
+                    println!("{LINE_START} Usage: dial <multiaddr>");
                     return Ok(());
                 }
             };
@@ -193,19 +205,19 @@ async fn handle_line(
             let addr = match Multiaddr::from_str(args) {
                 Ok(addr) => addr,
                 Err(err) => {
-                    println!("Failed to parse MultiAddr: {:?}", err);
+                    println!("{LINE_START} Failed to parse MultiAddr: {:?}", err);
                     return Ok(());
                 }
             };
 
-            info!("Dialing {:?}", addr);
+            info!("{LINE_START} Dialing {:?}", addr);
 
             match network_client.dial(addr).await {
                 Ok(_) => {
-                    println!("Peer dialed");
+                    println!("{LINE_START} Peer dialed");
                 }
                 Err(err) => {
-                    println!("Failed to parse peer id: {:?}", err);
+                    println!("{LINE_START} Failed to dial peer: {:?}", err);
                 }
             };
         }
@@ -213,7 +225,7 @@ async fn handle_line(
             let args = match args {
                 Some(args) => args,
                 None => {
-                    println!("Usage: subscribe <topic-name>");
+                    println!("{LINE_START} Usage: subscribe <topic-name>");
                     return Ok(());
                 }
             };
@@ -221,10 +233,10 @@ async fn handle_line(
             let topic = gossipsub::IdentTopic::new(args.to_string());
             match network_client.subscribe(topic).await {
                 Ok(_) => {
-                    println!("Peer dialed");
+                    println!("{LINE_START} Peer dialed");
                 }
                 Err(err) => {
-                    println!("Failed to parse peer id: {:?}", err);
+                    println!("{LINE_START} Failed to parse peer id: {:?}", err);
                 }
             };
         }
@@ -232,7 +244,7 @@ async fn handle_line(
             let args = match args {
                 Some(args) => args,
                 None => {
-                    println!("Usage: unsubscribe <topic-name>");
+                    println!("{LINE_START} Usage: unsubscribe <topic-name>");
                     return Ok(());
                 }
             };
@@ -240,10 +252,10 @@ async fn handle_line(
             let topic = gossipsub::IdentTopic::new(args.to_string());
             match network_client.unsubscribe(topic).await {
                 Ok(_) => {
-                    println!("Peer dialed");
+                    println!("{LINE_START} Peer dialed");
                 }
                 Err(err) => {
-                    println!("Failed to parse peer id: {:?}", err);
+                    println!("{LINE_START} Failed to parse peer id: {:?}", err);
                 }
             };
         }
@@ -251,17 +263,16 @@ async fn handle_line(
             let args = match args {
                 Some(args) => args,
                 None => {
-                    println!("Usage: message <topic-name> <message>");
+                    println!("{LINE_START} Usage: message <topic-name> <message>");
                     return Ok(());
                 }
             };
 
-            // Extracting topic name and message data from args
             let mut args_iter = args.split_whitespace();
             let topic_name = match args_iter.next() {
                 Some(topic) => topic,
                 None => {
-                    println!("Usage: message <topic-name> <message>");
+                    println!("{LINE_START} Usage: message <topic-name> <message>");
                     return Ok(());
                 }
             };
@@ -269,44 +280,42 @@ async fn handle_line(
             let message_data = match args_iter.next() {
                 Some(data) => data,
                 None => {
-                    println!("Usage: message <topic-name> <message>");
+                    println!("{LINE_START} Usage: message <topic-name> <message>");
                     return Ok(());
                 }
             };
 
             let topic = gossipsub::IdentTopic::new(topic_name.to_string());
-
-            // Publishing the message
             match network_client
                 .publish(topic.hash(), message_data.as_bytes().to_vec())
                 .await
             {
                 Ok(_) => {
-                    println!("Message published successfully");
+                    println!("{LINE_START} Message published successfully");
                 }
                 Err(err) => {
-                    println!("Failed to publish message: {:?}", err);
+                    println!("{LINE_START} Failed to publish message: {:?}", err);
                 }
             };
         }
         "peers" => {
             let peer_info = network_client.peer_info().await;
-            info!("Peer info: {:?}", peer_info);
+            println!("{LINE_START} Peer info: {:?}", peer_info);
         }
         "mesh-peers" => {
             let args = match args {
                 Some(args) => args,
                 None => {
-                    println!("Usage: mesh-peers <topic-name>");
+                    println!("{LINE_START} Usage: mesh-peers <topic-name>");
                     return Ok(());
                 }
             };
 
             let topic = gossipsub::IdentTopic::new(args.to_string());
             let mesh_peer_info = network_client.mesh_peer_info(topic.hash()).await;
-            info!("Mesh peer info: {:?}", mesh_peer_info);
+            println!("{LINE_START} Mesh peer info: {:?}", mesh_peer_info);
         }
-        _ => info!("Unknown command"),
+        _ => println!("{LINE_START} Unknown command"),
     }
 
     Ok(())

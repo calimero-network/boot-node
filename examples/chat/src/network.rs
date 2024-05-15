@@ -93,7 +93,7 @@ pub async fn run(
                 observed_addr,
             } => {
                 if peer_id == relay_peer_id {
-                    info!(address=%observed_addr, "Relay told us our observed address");
+                    info!("Relay told us our observed address: {}", observed_addr);
                     learned_observed_addr = true;
                 }
             }
@@ -105,7 +105,7 @@ pub async fn run(
         }
     }
 
-    // Create reservation on relay server and wait for it to be accepted.
+    // Create reservation on relay server and wait for it to be accepted ...
     client
         .listen_on(relay_address.with(multiaddr::Protocol::P2pCircuit))
         .await?;
@@ -113,11 +113,32 @@ pub async fn run(
     loop {
         match event_receiver.recv().await.unwrap() {
             types::NetworkEvent::RelayReservationAccepted => {
-                info!("Relay reservation accepted");
+                info!("Relay accepted our reservation");
                 break;
             }
             event => info!("unexpected: {event:?}"),
         };
+    }
+
+    // ... and now wait until we are listening on the "relayed" interfaces
+    // Reference: https://github.com/libp2p/rust-libp2p/blob/60fd566a955a33c42a6ab6eefc1f0fedef9f8b83/examples/dcutr/src/main.rs#L118
+    loop {
+        tokio::select! {
+            Some(event) = event_receiver.recv() => {
+                match event {
+                    types::NetworkEvent::ListeningOn { address, .. } => {
+                        info!("Listening on: {}", address);
+                    }
+                    _ => {
+                        error!("Recieved unexpected network event: {:?}", event)
+                    }
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                break;
+            }
+        }
     }
 
     Ok((client, event_receiver))
