@@ -155,11 +155,11 @@ async fn handle_network_event(
             println!("{LINE_START} Received message: {:?}", text);
 
             if is_echo {
-                let text = format!("echo ({}): '{}'", peer_id, text);
                 if text.starts_with("echo") {
                     debug!("Ignoring echo message");
                     return Ok(());
                 }
+                let text = format!("echo ({}): '{}'", peer_id, text);
 
                 match network_client
                     .publish(message.topic, text.into_bytes())
