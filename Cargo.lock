@@ -365,15 +365,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c59e92b5a388f549b863a7bea62612c09f24c8393560709a54558a9abdfb3b9c"
 
 [[package]]
-name = "cbor4ii"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59b4c883b9cc4757b061600d39001d4d0232bece4a3174696cf8f58a14db107d"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "cc"
 version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -413,7 +404,6 @@ dependencies = [
 name = "chat-example"
 version = "0.1.0"
 dependencies = [
- "camino",
  "clap",
  "eyre",
  "libp2p",
@@ -422,7 +412,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "toml",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1335,7 +1324,6 @@ dependencies = [
  "libp2p-ping",
  "libp2p-quic",
  "libp2p-relay",
- "libp2p-request-response",
  "libp2p-swarm",
  "libp2p-tcp",
  "libp2p-tls",
@@ -1640,28 +1628,6 @@ dependencies = [
  "rand",
  "static_assertions",
  "thiserror",
- "tracing",
- "void",
-]
-
-[[package]]
-name = "libp2p-request-response"
-version = "0.26.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e12823250fe0c45bdddea6eefa2be9a609aff1283ff4e1d8a294fdbb89572f6f"
-dependencies = [
- "async-trait",
- "cbor4ii",
- "futures",
- "futures-bounded",
- "futures-timer",
- "instant",
- "libp2p-core",
- "libp2p-identity",
- "libp2p-swarm",
- "rand",
- "serde",
- "smallvec",
  "tracing",
  "void",
 ]
