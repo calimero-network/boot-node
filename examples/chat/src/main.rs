@@ -53,7 +53,7 @@ async fn main() -> eyre::Result<()> {
     tracing_subscriber::registry()
         // "info,chat_example=debug,{}",
         .with(EnvFilter::builder().parse(format!(
-            "info,{}",
+            "info,chat_example=debug,{}",
             std::env::var("RUST_LOG").unwrap_or_default()
         ))?)
         .with(tracing_subscriber::fmt::layer())

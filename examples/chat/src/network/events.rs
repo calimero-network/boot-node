@@ -47,57 +47,20 @@ impl EventLoop {
                 debug!(peer=%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { address, .. } => {
-                        let dial_preference = match DialPreference::try_from(&address) {
-                            Ok(preference) => preference,
+                        let addr_meta = match MultiaddrMeta::try_from(&address) {
+                            Ok(meta) => meta,
                             Err(e) => {
-                                error!(%e, "Failed to parse dial preference for established connection");
+                                error!(%e, "Failed to parse dialer address meta for established connection");
                                 return;
                             }
                         };
 
-                        if let Some(entry) = self.pending_dial.remove(&peer_id) {
-                            match entry.dial_state {
-                                PendingDial::Direct if dial_preference.is_direct() => {
-                                    let _ = entry.sender.send(Ok(Some(())));
-                                }
-                                PendingDial::Dcutr(mut inner) => {
-                                    match inner.state {
-                                        PendingDialDcutrState::Initial
-                                            if dial_preference.is_dcutr()
-                                                && *dial_preference.relay_peer_id().unwrap() // safe to unwrap
-                                                    == inner.relay_peer_id =>
-                                        {
-                                            inner.state = PendingDialDcutrState::RelayConnected;
-                                            self.pending_dial.insert(
-                                                peer_id,
-                                                DialEntry {
-                                                    dial_state: PendingDial::Dcutr(inner),
-                                                    sender: entry.sender,
-                                                },
-                                            );
-                                        }
-                                        PendingDialDcutrState::RelayConnected
-                                            if dial_preference.is_direct() =>
-                                        {
-                                            let _ = entry.sender.send(Ok(Some(())));
-                                        }
-                                        _ => {
-                                            // Re-insert the removed entry back into the map
-                                            self.pending_dial.insert(
-                                                peer_id,
-                                                DialEntry {
-                                                    dial_state: PendingDial::Dcutr(inner),
-                                                    sender: entry.sender,
-                                                },
-                                            );
-                                        }
-                                    }
-                                }
-                                _ => {
-                                    // Re-insert the removed entry back into the map
-                                    self.pending_dial.insert(peer_id, entry);
-                                }
-                            }
+                        if addr_meta.is_relayed() {
+                            return;
+                        }
+
+                        if let Some(sender) = self.pending_dial.remove(&peer_id) {
+                            let _ = sender.send(Ok(Some(())));
                         }
                     }
                     _ => {}
@@ -118,8 +81,8 @@ impl EventLoop {
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 debug!(%error, ?peer_id, "Outgoing connection error");
                 if let Some(peer_id) = peer_id {
-                    if let Some(entry) = self.pending_dial.remove(&peer_id) {
-                        let _ = entry.sender.send(Err(eyre::eyre!(error)));
+                    if let Some(sender) = self.pending_dial.remove(&peer_id) {
+                        let _ = sender.send(Err(eyre::eyre!(error)));
                     }
                 }
             }

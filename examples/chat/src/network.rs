@@ -195,7 +195,7 @@ pub(crate) struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<types::NetworkEvent>,
-    pending_dial: HashMap<PeerId, DialEntry>,
+    pending_dial: HashMap<PeerId, oneshot::Sender<eyre::Result<Option<()>>>>,
 }
 
 impl EventLoop {
@@ -233,25 +233,22 @@ impl EventLoop {
                 };
             }
             Command::Dial { peer_addr, sender } => {
-                let dial_preference = match DialPreference::try_from(&peer_addr) {
-                    Ok(preference) => preference,
+                let addr_meta = match MultiaddrMeta::try_from(&peer_addr) {
+                    Ok(meta) => meta,
                     Err(e) => {
                         let _ = sender.send(Err(eyre::eyre!(e)));
                         return;
                     }
                 };
 
-                match self.pending_dial.entry(*dial_preference.peer_id()) {
+                match self.pending_dial.entry(*addr_meta.peer_id()) {
                     hash_map::Entry::Occupied(_) => {
                         let _ = sender.send(Ok(None));
                     }
                     hash_map::Entry::Vacant(entry) => {
-                        match self.swarm.dial(peer_addr) {
+                        match self.swarm.dial(peer_addr.clone()) {
                             Ok(_) => {
-                                entry.insert(DialEntry {
-                                    sender,
-                                    dial_state: dial_preference.into(),
-                                });
+                                entry.insert(sender);
                             }
                             Err(err) => {
                                 let _ = sender.send(Err(eyre::eyre!(err)));
@@ -365,122 +362,137 @@ pub(crate) struct MeshPeerInfo {
 }
 
 #[derive(Debug)]
-pub(crate) struct DialEntry {
-    pub(crate) sender: oneshot::Sender<eyre::Result<Option<()>>>,
-    pub(crate) dial_state: PendingDial,
+pub(crate) struct MultiaddrMeta {
+    peer_id: PeerId,
+    relay_peer_ids: Vec<PeerId>,
 }
 
-#[derive(Debug)]
-pub(crate) enum DialPreference {
-    Direct {
-        peer_id: PeerId,
-    },
-    Dcutr {
-        peer_id: PeerId,
-        relay_peer_id: PeerId,
-    },
-}
-
-#[derive(Debug)]
-pub(crate) enum PendingDial {
-    Direct,
-    Dcutr(PendingDialDcutr),
-}
-
-#[derive(Debug)]
-pub(crate) struct PendingDialDcutr {
-    pub(crate) relay_peer_id: PeerId,
-    pub(crate) state: PendingDialDcutrState,
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) enum PendingDialDcutrState {
-    Initial,
-    RelayConnected,
-}
-
-impl TryFrom<&Multiaddr> for DialPreference {
+impl TryFrom<&Multiaddr> for MultiaddrMeta {
     type Error = &'static str;
 
     fn try_from(value: &Multiaddr) -> Result<Self, Self::Error> {
-        // If there's no p2p-circuit protocol, directly extract peer_id
-        if !value
-            .iter()
-            .any(|protocol| matches!(protocol, multiaddr::Protocol::P2pCircuit))
-        {
-            for protocol in value.iter() {
-                if let multiaddr::Protocol::P2p(peer_id) = protocol {
-                    return Ok(DialPreference::Direct { peer_id });
-                }
-            }
-        }
+        let mut peer_ids = Vec::new();
 
-        // Iterate over the protocols in the MultiAddr
         let mut iter = value.iter();
-        let mut p2p_circuit_state = false;
-        let mut peer_id = None;
-        let mut relay_peer_id = None;
-
         while let Some(protocol) = iter.next() {
             match protocol {
                 multiaddr::Protocol::P2pCircuit => {
-                    // Found the p2p-circuit protocol,
-                    // move into state where next expected peer_id is actual peer_id
-                    p2p_circuit_state = true;
+                    if peer_ids.is_empty() {
+                        return Err("expected at least one p2p proto before P2pCircuit");
+                    }
+                    let Some(multiaddr::Protocol::P2p(id)) = iter.next() else {
+                        return Err("expected p2p proto after P2pCircuit");
+                    };
+                    peer_ids.push(id);
                 }
                 multiaddr::Protocol::P2p(id) => {
-                    if p2p_circuit_state {
-                        peer_id = Some(id);
-                    } else {
-                        relay_peer_id = Some(id);
-                    };
-                    if peer_id.is_some() && relay_peer_id.is_some() {
-                        return Ok(DialPreference::Dcutr {
-                            peer_id: peer_id.unwrap(),             // safe to unwrap
-                            relay_peer_id: relay_peer_id.unwrap(), // safe to unwrap
-                        });
-                    }
+                    peer_ids.push(id);
                 }
                 _ => {}
             }
         }
 
-        return Err("Failed to convert Multiaddr to DialPreference");
-    }
-}
-
-impl From<DialPreference> for PendingDial {
-    fn from(value: DialPreference) -> Self {
-        match value {
-            DialPreference::Direct { .. } => Self::Direct,
-            DialPreference::Dcutr { relay_peer_id, .. } => Self::Dcutr(PendingDialDcutr {
-                relay_peer_id,
-                state: PendingDialDcutrState::Initial,
+        match peer_ids.len() {
+            0 => Err("expected at least one p2p proto"),
+            _ => Ok(Self {
+                peer_id: peer_ids[peer_ids.len() - 1],
+                relay_peer_ids: peer_ids[0..peer_ids.len() - 1].to_vec(),
             }),
         }
     }
 }
 
-impl DialPreference {
-    fn is_direct(&self) -> bool {
-        matches!(self, Self::Direct { .. })
-    }
-
-    fn is_dcutr(&self) -> bool {
-        matches!(self, Self::Dcutr { .. })
-    }
-
+impl MultiaddrMeta {
     fn peer_id(&self) -> &PeerId {
-        match self {
-            Self::Direct { peer_id } => peer_id,
-            Self::Dcutr { peer_id, .. } => peer_id,
-        }
+        &self.peer_id
     }
 
-    fn relay_peer_id(&self) -> Option<&PeerId> {
-        match self {
-            Self::Direct { .. } => None,
-            Self::Dcutr { relay_peer_id, .. } => Some(relay_peer_id),
-        }
+    fn is_relayed(&self) -> bool {
+        !self.relay_peer_ids.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_multiaddr() {
+        let addr_str = "/ip4/3.71.239.80/udp/4001/quic-v1/p2p/12D3KooWAgFah4EZtWnMMGMUddGdJpb5cq2NubNCAD2jA5AZgbXF/p2p-circuit/p2p/12D3KooWP285Hw3CSTdr9oU6Ezz4hDoi6XS5vfDjjNeTJ1uFMGvp/p2p-circuit/p2p/12D3KooWMpeKAbMK4BTPsQY3rG7XwtdstseHGcq7kffY8LToYYKK";
+        let multiaddr: Multiaddr = addr_str.parse().expect("valid multiaddr");
+
+        let meta = MultiaddrMeta::try_from(&multiaddr).expect("valid MultiaddrMeta");
+        let expected_peer_id: PeerId = "12D3KooWMpeKAbMK4BTPsQY3rG7XwtdstseHGcq7kffY8LToYYKK"
+            .parse()
+            .expect("valid peer id");
+        let relay_peer_ids: Vec<PeerId> = vec![
+            "12D3KooWAgFah4EZtWnMMGMUddGdJpb5cq2NubNCAD2jA5AZgbXF"
+                .parse()
+                .expect("valid peer id"),
+            "12D3KooWP285Hw3CSTdr9oU6Ezz4hDoi6XS5vfDjjNeTJ1uFMGvp"
+                .parse()
+                .expect("valid peer id"),
+        ];
+
+        assert_eq!(meta.peer_id, expected_peer_id);
+        assert_eq!(meta.relay_peer_ids, relay_peer_ids);
+        assert!(meta.is_relayed());
+    }
+
+    #[test]
+    fn test_no_p2p_proto() {
+        let addr_str = "/ip4/3.71.239.80/udp/4001/quic-v1";
+        let multiaddr: Multiaddr = addr_str.parse().expect("valid multiaddr");
+
+        let result = MultiaddrMeta::try_from(&multiaddr);
+        assert!(result.is_err());
+        assert_eq!(result.err(), Some("expected at least one p2p proto"));
+    }
+
+    #[test]
+    fn test_p2p_circuit_without_previous_p2p() {
+        let addr_str = "/ip4/3.71.239.80/udp/4001/quic-v1/p2p-circuit";
+        let multiaddr: Multiaddr = addr_str.parse().expect("valid multiaddr");
+
+        let result = MultiaddrMeta::try_from(&multiaddr);
+        assert!(result.is_err());
+        assert_eq!(
+            result.err(),
+            Some("expected at least one p2p proto before P2pCircuit")
+        );
+    }
+
+    #[test]
+    fn test_single_p2p_no_circuit() {
+        let addr_str = "/ip4/3.71.239.80/udp/4001/quic-v1/p2p/12D3KooWAgFah4EZtWnMMGMUddGdJpb5cq2NubNCAD2jA5AZgbXF";
+        let multiaddr: Multiaddr = addr_str.parse().expect("valid multiaddr");
+
+        let meta = MultiaddrMeta::try_from(&multiaddr).expect("valid MultiaddrMeta");
+        let expected_peer_id: PeerId = "12D3KooWAgFah4EZtWnMMGMUddGdJpb5cq2NubNCAD2jA5AZgbXF"
+            .parse()
+            .expect("valid peer id");
+
+        assert_eq!(meta.peer_id, expected_peer_id);
+        assert!(meta.relay_peer_ids.is_empty());
+        assert!(!meta.is_relayed());
+    }
+
+    #[test]
+    fn test_p2p_circuit_with_single_p2p() {
+        let addr_str = "/ip4/3.71.239.80/udp/4001/quic-v1/p2p/12D3KooWAgFah4EZtWnMMGMUddGdJpb5cq2NubNCAD2jA5AZgbXF/p2p-circuit/p2p/12D3KooWP285Hw3CSTdr9oU6Ezz4hDoi6XS5vfDjjNeTJ1uFMGvp";
+        let multiaddr: Multiaddr = addr_str.parse().expect("valid multiaddr");
+
+        let meta = MultiaddrMeta::try_from(&multiaddr).expect("valid MultiaddrMeta");
+        let expected_peer_id: PeerId = "12D3KooWP285Hw3CSTdr9oU6Ezz4hDoi6XS5vfDjjNeTJ1uFMGvp"
+            .parse()
+            .expect("valid peer id");
+        let relay_peer_ids: Vec<PeerId> =
+            vec!["12D3KooWAgFah4EZtWnMMGMUddGdJpb5cq2NubNCAD2jA5AZgbXF"
+                .parse()
+                .expect("valid peer id")];
+
+        assert_eq!(meta.peer_id, expected_peer_id);
+        assert_eq!(meta.relay_peer_ids, relay_peer_ids);
+        assert!(meta.is_relayed());
     }
 }
