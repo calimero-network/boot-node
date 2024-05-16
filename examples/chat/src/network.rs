@@ -69,7 +69,7 @@ pub async fn run(
 
     let mut learned_observed_addr = false;
     let mut told_relay_observed_addr = false;
-    let relay_peer_id = match relay_address.clone().iter().find_map(|protocol| {
+    let relay_peer_id = match relay_address.iter().find_map(|protocol| {
         if let libp2p::multiaddr::Protocol::P2p(peer_id) = protocol {
             Some(peer_id)
         } else {
