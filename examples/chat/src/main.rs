@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use clap::Parser;
+use clap::ValueEnum;
 use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::PeerId;
@@ -17,7 +18,7 @@ mod network;
 #[clap(name = "Chat example")]
 struct Opt {
     /// The mode (interactive, echo).
-    #[clap(long)]
+    #[clap(long, value_enum)]
     mode: Mode,
 
     /// The port used to listen on all interfaces
@@ -41,21 +42,10 @@ struct Opt {
     gossip_topic_names: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Parser)]
+#[derive(Clone, Debug, PartialEq, Parser, ValueEnum)]
 enum Mode {
     Interactive,
     Echo,
-}
-
-impl FromStr for Mode {
-    type Err = String;
-    fn from_str(mode: &str) -> Result<Self, Self::Err> {
-        match mode {
-            "interactive" => Ok(Mode::Interactive),
-            "echo" => Ok(Mode::Echo),
-            _ => Err("Expected either 'interactive' or 'echo'".to_string()),
-        }
-    }
 }
 
 #[tokio::main]
