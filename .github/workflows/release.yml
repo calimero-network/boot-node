@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - feat/kad-boot-node
 permissions: write-all
 jobs:
   metadata:
@@ -57,15 +58,11 @@ jobs:
       - name: Build for Aarch Linux
         run: cross build --release --target=aarch64-unknown-linux-gnu
 
-      - name: Build for ARMv7 Linux
-        run: cross build --release --target=armv7-unknown-linux-gnueabihf
-
       - name: Create artifacts directory
         run: |
           mkdir -p artifacts
           cp target/x86_64-unknown-linux-gnu/release/relay-server artifacts/relay-server-x86_64-unknown-linux
           cp target/aarch64-unknown-linux-gnu/release/relay-server artifacts/relay-server-aarch64-unknown-linux
-          cp target/armv7-unknown-linux-gnueabihf/release/relay-server artifacts/relay-server-armv7-unknown-linux
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
