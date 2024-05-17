@@ -125,14 +125,24 @@ async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<Beha
 
 async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: BehaviourEvent) {
     match event {
-        BehaviourEvent::Identify(identify::Event::Received {
-            info: identify::Info { observed_addr, .. },
-            ..
-        }) => {
-            swarm.add_external_address(observed_addr);
+        BehaviourEvent::Identify(event) => {
+            info!("Identify event: {event:?}");
+            match event {
+                identify::Event::Received {
+                    info: identify::Info { observed_addr, .. },
+                    ..
+                } => {
+                    info!("Adding external address: {observed_addr:?}");
+                    swarm.add_external_address(observed_addr);
+                }
+                _ => {}
+            }
         }
         BehaviourEvent::Kad(event) => {
             info!("Kad event: {event:?}");
+        }
+        BehaviourEvent::Relay(event) => {
+            info!("Relay event: {event:?}");
         }
         _ => {}
     }
