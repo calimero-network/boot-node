@@ -44,7 +44,7 @@ impl EventLoop {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                debug!(peer=%peer_id, ?endpoint, "Connection established");
+                debug!(%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { address, .. } => {
                         let addr_meta = match MultiaddrMeta::try_from(&address) {
@@ -56,7 +56,7 @@ impl EventLoop {
                         };
 
                         if addr_meta.is_relayed() {
-                            return;
+                            debug!("Connection established via relay");
                         }
 
                         if let Some(sender) = self.pending_dial.remove(&peer_id) {

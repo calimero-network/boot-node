@@ -246,7 +246,7 @@ impl EventLoop {
                         let _ = sender.send(Ok(None));
                     }
                     hash_map::Entry::Vacant(entry) => {
-                        match self.swarm.dial(peer_addr.clone()) {
+                        match self.swarm.dial(peer_addr) {
                             Ok(_) => {
                                 entry.insert(sender);
                             }
@@ -392,12 +392,13 @@ impl TryFrom<&Multiaddr> for MultiaddrMeta {
             }
         }
 
-        match peer_ids.len() {
-            0 => Err("expected at least one p2p proto"),
-            _ => Ok(Self {
-                peer_id: peer_ids[peer_ids.len() - 1],
-                relay_peer_ids: peer_ids[0..peer_ids.len() - 1].to_vec(),
-            }),
+        if let Some(peer_id) = peer_ids.pop() {
+            Ok(Self {
+                peer_id,
+                relay_peer_ids: peer_ids,
+            })
+        } else {
+            Err("expected at least one p2p proto")
         }
     }
 }
