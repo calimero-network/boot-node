@@ -66,8 +66,7 @@ async fn main() -> eyre::Result<()> {
             )),
             kad: {
                 let mut kademlia_config = kad::Config::default();
-                kademlia_config
-                    .set_protocol_names(std::iter::once(CALIMERO_KAD_PROTO_NAME).collect());
+                kademlia_config.set_protocol_names(vec![CALIMERO_KAD_PROTO_NAME]);
                 // Instantly remove records and provider records.
                 // TODO: figure out what to do with these values, ref: https://github.com/libp2p/rust-libp2p/blob/1aa016e1c7e3976748a726eab37af44d1c5b7a6e/misc/server/src/behaviour.rs#L38
                 kademlia_config.set_record_ttl(Some(std::time::Duration::from_secs(0)));
