@@ -48,6 +48,8 @@ impl FromStr for Mode {
     }
 }
 
+const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+
 #[derive(NetworkBehaviour)]
 struct Behaviour {
     relay_client: relay::client::Behaviour,
@@ -85,7 +87,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 relay_client: relay_behaviour,
                 ping: ping::Behaviour::new(ping::Config::new()),
                 identify: identify::Behaviour::new(identify::Config::new(
-                    "/relay-server/0.2.0".to_string(),
+                    PROTOCOL_VERSION.to_owned(),
                     keypair.public(),
                 )),
                 dcutr: dcutr::Behaviour::new(keypair.public().to_peer_id()),

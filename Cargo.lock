@@ -339,6 +339,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot-node"
+version = "0.3.0"
+dependencies = [
+ "camino",
+ "clap",
+ "eyre",
+ "futures-util",
+ "libp2p",
+ "multiaddr",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2509,23 +2526,6 @@ name = "regex-syntax"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adad44e29e4c806119491a7f06f03de4d1af22c3a680dd47f1e6e179439d1f56"
-
-[[package]]
-name = "relay-server"
-version = "0.3.0"
-dependencies = [
- "camino",
- "clap",
- "eyre",
- "futures-util",
- "libp2p",
- "multiaddr",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "resolv-conf"

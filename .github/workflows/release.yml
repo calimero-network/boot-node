@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - feat/kad-boot-node
 permissions: write-all
 jobs:
   metadata:
@@ -25,7 +24,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_URL=$(curl --silent "https://api.github.com/repos/calimero-network/relay-server/releases/tags/${{ steps.get_version.outputs.version }}" \
+          RELEASE_URL=$(curl --silent "https://api.github.com/repos/calimero-network/boot-node/releases/tags/${{ steps.get_version.outputs.version }}" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" | jq -r '.url')
           if [[ "$RELEASE_URL" != "null" ]]; then
@@ -61,8 +60,8 @@ jobs:
       - name: Create artifacts directory
         run: |
           mkdir -p artifacts
-          cp target/x86_64-unknown-linux-gnu/release/relay-server artifacts/relay-server-x86_64-unknown-linux
-          cp target/aarch64-unknown-linux-gnu/release/relay-server artifacts/relay-server-aarch64-unknown-linux
+          cp target/x86_64-unknown-linux-gnu/release/boot-node artifacts/boot-node-x86_64-unknown-linux
+          cp target/aarch64-unknown-linux-gnu/release/boot-node artifacts/boot-node-aarch64-unknown-linux
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
