@@ -3,7 +3,7 @@ use std::net::Ipv4Addr;
 use clap::Parser;
 use libp2p::futures::prelude::*;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
-use libp2p::{identify, identity, kad, ping, relay, Multiaddr, StreamProtocol, Swarm};
+use libp2p::{identify, identity, kad, ping, relay, rendezvous, Multiaddr, StreamProtocol, Swarm};
 use tracing::info;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -16,6 +16,7 @@ struct Behaviour {
     identify: identify::Behaviour,
     kad: kad::Behaviour<kad::store::MemoryStore>,
     ping: ping::Behaviour,
+    rendezvous: rendezvous::server::Behaviour,
     relay: relay::Behaviour,
 }
 
@@ -89,6 +90,7 @@ async fn main() -> eyre::Result<()> {
                 kademlia
             },
             ping: ping::Behaviour::new(ping::Config::new()),
+            rendezvous: rendezvous::server::Behaviour::new(rendezvous::server::Config::default()),
             relay: relay::Behaviour::new(keypair.public().to_peer_id(), Default::default()),
         })?
         .build();
@@ -140,6 +142,9 @@ async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: Behav
         }
         BehaviourEvent::Kad(event) => {
             info!("Kad event: {event:?}");
+        }
+        BehaviourEvent::Rendezvous(event) => {
+            info!("Rendezvous event: {event:?}");
         }
         BehaviourEvent::Relay(event) => {
             info!("Relay event: {event:?}");

@@ -309,6 +309,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
+name = "bimap"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "230c5f1ca6a325a32553f8640d31ac9b49f2411e901e427570154868b46da4f7"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -340,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "boot-node"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "camino",
  "clap",
@@ -1367,6 +1373,7 @@ dependencies = [
  "libp2p-ping",
  "libp2p-quic",
  "libp2p-relay",
+ "libp2p-rendezvous",
  "libp2p-swarm",
  "libp2p-tcp",
  "libp2p-tls",
@@ -1703,6 +1710,50 @@ dependencies = [
  "tracing",
  "void",
  "web-time",
+]
+
+[[package]]
+name = "libp2p-rendezvous"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "168a444a16f569771bcb48aa081a32724079156e64a730dd900276391ccb6385"
+dependencies = [
+ "async-trait",
+ "asynchronous-codec 0.6.2",
+ "bimap",
+ "futures",
+ "futures-timer",
+ "instant",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-request-response",
+ "libp2p-swarm",
+ "quick-protobuf",
+ "quick-protobuf-codec 0.2.0",
+ "rand",
+ "thiserror",
+ "tracing",
+ "void",
+]
+
+[[package]]
+name = "libp2p-request-response"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6946e5456240b3173187cc37a17cb40c3cd1f7138c76e2c773e0d792a42a8de1"
+dependencies = [
+ "async-trait",
+ "futures",
+ "futures-bounded",
+ "futures-timer",
+ "instant",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-swarm",
+ "rand",
+ "smallvec",
+ "tracing",
+ "void",
 ]
 
 [[package]]
