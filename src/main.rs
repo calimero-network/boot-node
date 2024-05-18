@@ -3,18 +3,20 @@ use std::net::Ipv4Addr;
 use clap::Parser;
 use libp2p::futures::prelude::*;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
-use libp2p::{identify, identity, ping, relay, Multiaddr, Swarm};
+use libp2p::{identify, identity, kad, ping, relay, Multiaddr, StreamProtocol, Swarm};
 use tracing::info;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/kad/1.0.0");
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
-    relay: relay::Behaviour,
-    ping: ping::Behaviour,
     identify: identify::Behaviour,
+    kad: kad::Behaviour<kad::store::MemoryStore>,
+    ping: ping::Behaviour,
+    relay: relay::Behaviour,
 }
 
 #[derive(Debug, Parser)]
@@ -45,8 +47,9 @@ async fn main() -> eyre::Result<()> {
 
     let mut bytes = std::fs::read(opt.private_key)?;
     let keypair = identity::Keypair::from_protobuf_encoding(&mut bytes)?;
+    let peer_id = keypair.public().to_peer_id();
 
-    info!("Peer id: {:?}", keypair.public().to_peer_id());
+    info!("Peer id: {:?}", peer_id);
 
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
@@ -56,13 +59,37 @@ async fn main() -> eyre::Result<()> {
             libp2p::yamux::Config::default,
         )?
         .with_quic()
-        .with_behaviour(|key| Behaviour {
-            relay: relay::Behaviour::new(key.public().to_peer_id(), Default::default()),
-            ping: ping::Behaviour::new(ping::Config::new()),
+        .with_behaviour(|keypair| Behaviour {
             identify: identify::Behaviour::new(identify::Config::new(
                 PROTOCOL_VERSION.to_owned(),
-                key.public(),
+                keypair.public(),
             )),
+            kad: {
+                let mut kademlia_config = kad::Config::default();
+                kademlia_config.set_protocol_names(vec![CALIMERO_KAD_PROTO_NAME]);
+                // Instantly remove records and provider records.
+                // TODO: figure out what to do with these values, ref: https://github.com/libp2p/rust-libp2p/blob/1aa016e1c7e3976748a726eab37af44d1c5b7a6e/misc/server/src/behaviour.rs#L38
+                kademlia_config.set_record_ttl(Some(std::time::Duration::from_secs(0)));
+                kademlia_config.set_provider_record_ttl(Some(std::time::Duration::from_secs(0)));
+
+                let mut kademlia = kad::Behaviour::with_config(
+                    peer_id,
+                    kad::store::MemoryStore::new(peer_id),
+                    kademlia_config,
+                );
+                kademlia.set_mode(Some(kad::Mode::Server));
+                // TODO: implement support for adding bootstrap peers
+                // for peer in opt.bootstrap_peers.iter() {
+                //     kademlia.add_address(&PeerId::from_str(peer).unwrap(), bootaddr.clone());
+                // }
+                // if let Err(err) = kademlia.bootstrap() {
+                //     warn!(%err, "Failed to bootstrap Kademlia");
+                // };
+
+                kademlia
+            },
+            ping: ping::Behaviour::new(ping::Config::new()),
+            relay: relay::Behaviour::new(keypair.public().to_peer_id(), Default::default()),
         })?
         .build();
 
@@ -87,18 +114,35 @@ async fn main() -> eyre::Result<()> {
 async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>) {
     match event {
         SwarmEvent::Behaviour(event) => {
-            if let BehaviourEvent::Identify(identify::Event::Received {
-                info: identify::Info { observed_addr, .. },
-                ..
-            }) = &event
-            {
-                swarm.add_external_address(observed_addr.clone());
-            }
-
-            info!("{event:?}")
+            handle_swarm_behaviour_event(swarm, event).await;
         }
         SwarmEvent::NewListenAddr { address, .. } => {
             info!("Listening on {address:?}");
+        }
+        _ => {}
+    }
+}
+
+async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: BehaviourEvent) {
+    match event {
+        BehaviourEvent::Identify(event) => {
+            info!("Identify event: {event:?}");
+            match event {
+                identify::Event::Received {
+                    info: identify::Info { observed_addr, .. },
+                    ..
+                } => {
+                    info!("Adding external address: {observed_addr:?}");
+                    swarm.add_external_address(observed_addr);
+                }
+                _ => {}
+            }
+        }
+        BehaviourEvent::Kad(event) => {
+            info!("Kad event: {event:?}");
+        }
+        BehaviourEvent::Relay(event) => {
+            info!("Relay event: {event:?}");
         }
         _ => {}
     }

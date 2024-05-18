@@ -1,1 +1,1 @@
-# relay-server
+# boot-node
