@@ -6,7 +6,7 @@ use super::{EventHandler, EventLoop, RelayReservationState};
 
 impl EventHandler<relay::client::Event> for EventLoop {
     async fn handle(&mut self, event: relay::client::Event) {
-        debug!("{}: {:?}", "relay_client".yellow(), event);
+        debug!("{}: {:?}", "relay".yellow(), event);
 
         match event {
             relay::client::Event::ReservationReqAccepted { relay_peer_id, .. } => {

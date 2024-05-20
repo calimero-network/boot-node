@@ -55,9 +55,9 @@ enum Mode {
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     tracing_subscriber::registry()
-        // "info,chat_example=debug,{}",
+        // "info,chat_example=debug,libp2p_mdns=warn,{}",
         .with(EnvFilter::builder().parse(format!(
-            "info,chat_example=info,libp2p_mdns=warn,{}",
+            "info,libp2p_mdns=warn,{}",
             std::env::var("RUST_LOG").unwrap_or_default()
         ))?)
         .with(tracing_subscriber::fmt::layer())
