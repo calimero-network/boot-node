@@ -2,35 +2,53 @@ use libp2p::identify;
 use owo_colors::OwoColorize;
 use tracing::{debug, error};
 
-use super::{types, EventHandler, EventLoop};
+use super::{EventHandler, EventLoop, RelayReservationState};
 
 impl EventHandler<identify::Event> for EventLoop {
     async fn handle(&mut self, event: identify::Event) {
         debug!("{}: {:?}", "identify".yellow(), event);
 
         match event {
-            identify::Event::Received {
-                peer_id,
-                info: identify::Info { observed_addr, .. },
-            } => {
-                if let Err(err) = self
-                    .event_sender
-                    .send(types::NetworkEvent::IdentifyReceived {
-                        peer_id,
-                        observed_addr,
-                    })
-                    .await
-                {
-                    error!("Failed to send message event: {:?}", err);
+            identify::Event::Received { peer_id, .. } => {
+                if let Some(entry) = self.relays.get_mut(&peer_id) {
+                    entry.indetify_state.received = true;
+
+                    if entry.indetify_state.is_exchanged()
+                        && matches!(entry.reservation_state, RelayReservationState::Unknown)
+                    {
+                        if let Err(err) = self
+                            .swarm
+                            .listen_on(entry.address.clone().with(multiaddr::Protocol::P2pCircuit))
+                        {
+                            error!("Failed to listen on relay address: {:?}", err);
+                        };
+                        entry.reservation_state = RelayReservationState::Requested;
+                    }
+                }
+
+                if let Some(entry) = self.rendezvous.get_mut(&peer_id) {
+                    entry.indetify_state.received = true;
                 }
             }
             identify::Event::Sent { peer_id } => {
-                if let Err(err) = self
-                    .event_sender
-                    .send(types::NetworkEvent::IdentifySent { peer_id })
-                    .await
-                {
-                    error!("Failed to send message event: {:?}", err);
+                if let Some(entry) = self.relays.get_mut(&peer_id) {
+                    entry.indetify_state.sent = true;
+
+                    if entry.indetify_state.is_exchanged()
+                        && matches!(entry.reservation_state, RelayReservationState::Unknown)
+                    {
+                        if let Err(err) = self
+                            .swarm
+                            .listen_on(entry.address.clone().with(multiaddr::Protocol::P2pCircuit))
+                        {
+                            error!("Failed to listen on relay address: {:?}", err);
+                        };
+                        entry.reservation_state = RelayReservationState::Requested;
+                    }
+                }
+
+                if let Some(entry) = self.rendezvous.get_mut(&peer_id) {
+                    entry.indetify_state.sent = true;
                 }
             }
             _ => {}

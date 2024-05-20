@@ -31,7 +31,11 @@ struct Opt {
 
     /// The listening address of a relay server to connect to.
     #[clap(long)]
-    relay_address: Multiaddr,
+    boot_nodes: Vec<Multiaddr>,
+
+    /// The listening address of a relay server to connect to.
+    #[clap(long, default_value = "/calimero/devnet/examples/chat")]
+    rendezvous_namespace: String,
 
     /// Optional list of peer addresses to dial immediately after network bootstrap.
     #[clap(long)]
@@ -53,7 +57,7 @@ async fn main() -> eyre::Result<()> {
     tracing_subscriber::registry()
         // "info,chat_example=debug,{}",
         .with(EnvFilter::builder().parse(format!(
-            "info,chat_example=debug,{}",
+            "info,chat_example=info,libp2p_mdns=warn,{}",
             std::env::var("RUST_LOG").unwrap_or_default()
         ))?)
         .with(tracing_subscriber::fmt::layer())
@@ -63,8 +67,14 @@ async fn main() -> eyre::Result<()> {
 
     let keypair = generate_ed25519(opt.secret_key_seed);
 
-    let (network_client, mut network_events) =
-        network::run(keypair.clone(), opt.port, opt.relay_address.clone()).await?;
+    let (network_client, mut network_events) = network::run(
+        keypair.clone(),
+        opt.port,
+        libp2p::rendezvous::Namespace::new(opt.rendezvous_namespace)?,
+        opt.boot_nodes.clone(),
+        opt.boot_nodes.clone(),
+    )
+    .await?;
 
     if let Some(peer_addrs) = opt.dial_peer_addrs {
         for addr in peer_addrs {
@@ -128,18 +138,6 @@ async fn handle_network_event(
     is_echo: bool,
 ) -> eyre::Result<()> {
     match event {
-        network::types::NetworkEvent::IdentifySent { peer_id } => {
-            debug!("Identify sent to {:?}", peer_id);
-        }
-        network::types::NetworkEvent::IdentifyReceived {
-            peer_id,
-            observed_addr,
-        } => {
-            debug!(
-                "Identify received from {:?} at {:?}",
-                peer_id, observed_addr
-            );
-        }
         network::types::NetworkEvent::Message { message, .. } => {
             let text = String::from_utf8_lossy(&message.data);
             println!("{LINE_START} Received message: {:?}", text);
@@ -165,9 +163,6 @@ async fn handle_network_event(
         }
         network::types::NetworkEvent::ListeningOn { address, .. } => {
             info!("Listening on: {}", address);
-        }
-        event => {
-            info!("Unhandled event: {:?}", event);
         }
     }
     Ok(())

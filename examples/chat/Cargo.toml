@@ -10,14 +10,17 @@ license = "MIT OR Apache-2.0"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 eyre = "0.6.12"
 libp2p = { version = "0.53.2", features = [
+    "autonat",
     "dcutr",
     "dns",
     "gossipsub",
     "identify",
     "macros",
+    "mdns",
     "noise",
     "ping",
     "quic",
+    "rendezvous",
     "relay",
     "tokio",
     "tcp",

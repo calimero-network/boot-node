@@ -16,12 +16,4 @@ pub enum NetworkEvent {
         id: MessageId,
         message: Message,
     },
-    IdentifySent {
-        peer_id: PeerId,
-    },
-    IdentifyReceived {
-        peer_id: PeerId,
-        observed_addr: libp2p::Multiaddr,
-    },
-    RelayReservationAccepted,
 }
