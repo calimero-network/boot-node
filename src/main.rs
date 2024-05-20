@@ -15,7 +15,7 @@ const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/k
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
-    auto_nat: autonat::Behaviour,
+    autonat: autonat::Behaviour,
     identify: identify::Behaviour,
     kad: kad::Behaviour<kad::store::MemoryStore>,
     ping: ping::Behaviour,
@@ -64,7 +64,7 @@ async fn main() -> eyre::Result<()> {
         )?
         .with_quic()
         .with_behaviour(|keypair| Behaviour {
-            auto_nat: autonat::Behaviour::new(peer_id.clone(), Default::default()),
+            autonat: autonat::Behaviour::new(peer_id.clone(), Default::default()),
             identify: identify::Behaviour::new(identify::Config::new(
                 PROTOCOL_VERSION.to_owned(),
                 keypair.public(),
@@ -131,7 +131,7 @@ async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<Beha
 
 async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: BehaviourEvent) {
     match event {
-        BehaviourEvent::AutoNat(event) => {
+        BehaviourEvent::Autonat(event) => {
             info!("AutoNat event: {event:?}");
         }
         BehaviourEvent::Identify(event) => {
