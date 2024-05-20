@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - chore/remove-unnecessary-address-addition
 permissions: write-all
 jobs:
   metadata:
