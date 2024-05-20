@@ -3,7 +3,9 @@ use std::net::Ipv4Addr;
 use clap::Parser;
 use libp2p::futures::prelude::*;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
-use libp2p::{identify, identity, kad, ping, relay, rendezvous, Multiaddr, StreamProtocol, Swarm};
+use libp2p::{
+    autonat, identify, identity, kad, ping, relay, rendezvous, Multiaddr, StreamProtocol, Swarm,
+};
 use tracing::info;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -13,11 +15,12 @@ const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/k
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
+    autonat: autonat::Behaviour,
     identify: identify::Behaviour,
     kad: kad::Behaviour<kad::store::MemoryStore>,
     ping: ping::Behaviour,
-    rendezvous: rendezvous::server::Behaviour,
     relay: relay::Behaviour,
+    rendezvous: rendezvous::server::Behaviour,
 }
 
 #[derive(Debug, Parser)]
@@ -61,6 +64,7 @@ async fn main() -> eyre::Result<()> {
         )?
         .with_quic()
         .with_behaviour(|keypair| Behaviour {
+            autonat: autonat::Behaviour::new(peer_id.clone(), Default::default()),
             identify: identify::Behaviour::new(identify::Config::new(
                 PROTOCOL_VERSION.to_owned(),
                 keypair.public(),
@@ -127,6 +131,9 @@ async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<Beha
 
 async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: BehaviourEvent) {
     match event {
+        BehaviourEvent::Autonat(event) => {
+            info!("AutoNat event: {event:?}");
+        }
         BehaviourEvent::Identify(event) => {
             info!("Identify event: {event:?}");
             match event {
@@ -143,11 +150,11 @@ async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: Behav
         BehaviourEvent::Kad(event) => {
             info!("Kad event: {event:?}");
         }
-        BehaviourEvent::Rendezvous(event) => {
-            info!("Rendezvous event: {event:?}");
-        }
         BehaviourEvent::Relay(event) => {
             info!("Relay event: {event:?}");
+        }
+        BehaviourEvent::Rendezvous(event) => {
+            info!("Rendezvous event: {event:?}");
         }
         _ => {}
     }
