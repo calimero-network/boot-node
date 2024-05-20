@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - feat/rendezvous-server
 permissions: write-all
 jobs:
   metadata:
