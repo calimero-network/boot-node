@@ -3,7 +3,7 @@ members = [".", "examples/dcutr", "examples/chat"]
 
 [package]
 name = "boot-node"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Calimero Limited <info@calimero.network>"]
 edition = "2021"
 repository = "https://github.com/calimero-network/boot-node"
@@ -15,6 +15,7 @@ clap = { version = "4.5.4", features = ["derive", "env"] }
 eyre = "0.6.12"
 futures-util = "0.3.30"
 libp2p = { version = "0.53.2", features = [
+    "autonat",
     "identify",
     "kad",
     "macros",
