@@ -1,4 +1,5 @@
 use std::collections::hash_map::{self, HashMap};
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use libp2p::futures::prelude::*;
@@ -37,7 +38,7 @@ pub async fn run(
     relay_addresses: Vec<Multiaddr>,
     rendezvous_addresses: Vec<Multiaddr>,
 ) -> eyre::Result<(NetworkClient, mpsc::Receiver<types::NetworkEvent>)> {
-    let mut rendezvous = HashMap::new();
+    let mut rendezvous = BTreeMap::new();
     for address in &rendezvous_addresses {
         let entry = match peek_peer_id(&address) {
             Ok(peer_id) => (peer_id, RendezvousEntry::new(address.clone())),
@@ -48,7 +49,7 @@ pub async fn run(
         rendezvous.insert(entry.0, entry.1);
     }
 
-    let mut relays = HashMap::new();
+    let mut relays = BTreeMap::new();
     for address in &relay_addresses {
         let entry = match peek_peer_id(&address) {
             Ok(peer_id) => (peer_id, RelayEntry::new(address.clone())),
@@ -105,9 +106,9 @@ async fn run_init_dial(
 
 async fn init(
     keypair: identity::Keypair,
-    relays: HashMap<PeerId, RelayEntry>,
+    relays: BTreeMap<PeerId, RelayEntry>,
     rendezvous_namespace: rendezvous::Namespace,
-    rendezvous: HashMap<PeerId, RendezvousEntry>,
+    rendezvous: BTreeMap<PeerId, RendezvousEntry>,
 ) -> eyre::Result<(
     NetworkClient,
     mpsc::Receiver<types::NetworkEvent>,
@@ -166,9 +167,9 @@ pub(crate) struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<types::NetworkEvent>,
-    relays: HashMap<PeerId, RelayEntry>,
+    relays: BTreeMap<PeerId, RelayEntry>,
     rendezvous_namespace: rendezvous::Namespace,
-    rendezvous: HashMap<PeerId, RendezvousEntry>,
+    rendezvous: BTreeMap<PeerId, RendezvousEntry>,
     pending_dial: HashMap<PeerId, oneshot::Sender<eyre::Result<Option<()>>>>,
 }
 
@@ -231,9 +232,9 @@ impl EventLoop {
         swarm: Swarm<Behaviour>,
         command_receiver: mpsc::Receiver<Command>,
         event_sender: mpsc::Sender<types::NetworkEvent>,
-        relays: HashMap<PeerId, RelayEntry>,
+        relays: BTreeMap<PeerId, RelayEntry>,
         rendezvous_namespace: rendezvous::Namespace,
-        rendezvous: HashMap<PeerId, RendezvousEntry>,
+        rendezvous: BTreeMap<PeerId, RendezvousEntry>,
     ) -> Self {
         Self {
             swarm,
