@@ -17,7 +17,7 @@ pub mod types;
 
 use client::NetworkClient;
 
-const PROTOCOL_VERSION: &str = concat!("/", "boot-node", "/", "0.5.0");
+const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
