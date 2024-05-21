@@ -9,7 +9,7 @@ use libp2p::{
 use multiaddr::Multiaddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub mod client;
 pub mod events;
@@ -38,9 +38,9 @@ pub async fn run(
     rendezvous_addresses: Vec<Multiaddr>,
 ) -> eyre::Result<(NetworkClient, mpsc::Receiver<types::NetworkEvent>)> {
     let mut rendezvous = HashMap::new();
-    for address in rendezvous_addresses.clone().into_iter() {
-        let entry = match peak_peer_id(&address) {
-            Ok(peer_id) => (peer_id, RendezvousEntry::new(address)),
+    for address in &rendezvous_addresses {
+        let entry = match peek_peer_id(&address) {
+            Ok(peer_id) => (peer_id, RendezvousEntry::new(address.clone())),
             Err(err) => {
                 eyre::bail!("Failed to parse rendezvous PeerId: {}", err);
             }
@@ -49,9 +49,9 @@ pub async fn run(
     }
 
     let mut relays = HashMap::new();
-    for address in relay_addresses.clone().into_iter() {
-        let entry = match peak_peer_id(&address) {
-            Ok(peer_id) => (peer_id, RelayEntry::new(address)),
+    for address in &relay_addresses {
+        let entry = match peek_peer_id(&address) {
+            Ok(peer_id) => (peer_id, RelayEntry::new(address.clone())),
             Err(err) => {
                 eyre::bail!("Failed to parse relay PeerId: {}", err);
             }
@@ -88,12 +88,15 @@ async fn run_init_dial(
 ) {
     tokio::time::sleep(Duration::from_secs(5)).await;
 
+    info!("Initiating dial to rendezvous and relay addresses.");
+
     for addr in rendezvous_addresses
         .into_iter()
         .chain(relay_addresses)
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
     {
+        info!("Dialing address: {:?}", addr);
         if let Err(err) = client.dial(addr).await {
             error!("Failed to dial rendezvous address: {}", err);
         };
@@ -172,7 +175,7 @@ pub(crate) struct EventLoop {
 #[derive(Debug)]
 pub(crate) struct RelayEntry {
     address: Multiaddr,
-    indetify_state: IdentifyState,
+    identify_state: IdentifyState,
     reservation_state: RelayReservationState,
 }
 
@@ -180,7 +183,7 @@ impl RelayEntry {
     pub(crate) fn new(address: Multiaddr) -> Self {
         Self {
             address,
-            indetify_state: Default::default(),
+            identify_state: Default::default(),
             reservation_state: Default::default(),
         }
     }
@@ -190,7 +193,7 @@ impl RelayEntry {
 pub(crate) struct RendezvousEntry {
     address: Multiaddr,
     cookie: Option<rendezvous::Cookie>,
-    indetify_state: IdentifyState,
+    identify_state: IdentifyState,
 }
 
 impl RendezvousEntry {
@@ -198,7 +201,7 @@ impl RendezvousEntry {
         Self {
             address,
             cookie: Default::default(),
-            indetify_state: Default::default(),
+            identify_state: Default::default(),
         }
     }
 }
@@ -271,7 +274,7 @@ impl EventLoop {
                 };
             }
             Command::Dial { peer_addr, sender } => {
-                let peer_id = match peak_peer_id(&peer_addr) {
+                let peer_id = match peek_peer_id(&peer_addr) {
                     Ok(peer_id) => peer_id,
                     Err(e) => {
                         let _ = sender.send(Err(eyre::eyre!(e)));
@@ -399,7 +402,7 @@ pub(crate) struct MeshPeerInfo {
     peers: Vec<PeerId>,
 }
 
-pub(crate) fn peak_peer_id(address: &Multiaddr) -> eyre::Result<PeerId> {
+pub(crate) fn peek_peer_id(address: &Multiaddr) -> eyre::Result<PeerId> {
     match address.iter().last() {
         Some(proto) => match proto {
             multiaddr::Protocol::P2p(peer_id) => Ok(peer_id),

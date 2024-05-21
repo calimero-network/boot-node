@@ -122,7 +122,7 @@ impl EventLoop {
 
     pub(super) async fn handle_rendezvous_discover(&mut self) {
         for (peer_id, entry) in self.rendezvous.iter() {
-            if entry.indetify_state.is_exchanged() {
+            if entry.identify_state.is_exchanged() {
                 self.swarm.behaviour_mut().rendezvous.discover(
                     Some(self.rendezvous_namespace.clone()),
                     entry.cookie.clone(),

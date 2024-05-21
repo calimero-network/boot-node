@@ -55,7 +55,7 @@ impl EventHandler<rendezvous::client::Event> for EventLoop {
                 let local_peer_id = *self.swarm.local_peer_id();
                 if peer == local_peer_id {
                     if let Err(err) = self.swarm.behaviour_mut().rendezvous.register(
-                        libp2p::rendezvous::Namespace::from_static("rendezvous"),
+                        self.rendezvous_namespace.clone(),
                         peer,
                         None,
                     ) {

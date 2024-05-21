@@ -11,9 +11,9 @@ impl EventHandler<identify::Event> for EventLoop {
         match event {
             identify::Event::Received { peer_id, .. } => {
                 if let Some(entry) = self.relays.get_mut(&peer_id) {
-                    entry.indetify_state.received = true;
+                    entry.identify_state.received = true;
 
-                    if entry.indetify_state.is_exchanged()
+                    if entry.identify_state.is_exchanged()
                         && matches!(entry.reservation_state, RelayReservationState::Unknown)
                     {
                         if let Err(err) = self
@@ -27,14 +27,14 @@ impl EventHandler<identify::Event> for EventLoop {
                 }
 
                 if let Some(entry) = self.rendezvous.get_mut(&peer_id) {
-                    entry.indetify_state.received = true;
+                    entry.identify_state.received = true;
                 }
             }
             identify::Event::Sent { peer_id } => {
                 if let Some(entry) = self.relays.get_mut(&peer_id) {
-                    entry.indetify_state.sent = true;
+                    entry.identify_state.sent = true;
 
-                    if entry.indetify_state.is_exchanged()
+                    if entry.identify_state.is_exchanged()
                         && matches!(entry.reservation_state, RelayReservationState::Unknown)
                     {
                         if let Err(err) = self
@@ -48,7 +48,7 @@ impl EventHandler<identify::Event> for EventLoop {
                 }
 
                 if let Some(entry) = self.rendezvous.get_mut(&peer_id) {
-                    entry.indetify_state.sent = true;
+                    entry.identify_state.sent = true;
                 }
             }
             _ => {}
