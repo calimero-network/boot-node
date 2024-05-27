@@ -1,6 +1,6 @@
 [package]
 name = "chat-example"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Calimero Limited <info@calimero.network>"]
 edition = "2021"
 repository = "https://github.com/calimero-network/boot-node"
@@ -15,9 +15,11 @@ libp2p = { version = "0.53.2", features = [
     "gossipsub",
     "identify",
     "macros",
+    "mdns",
     "noise",
     "ping",
     "quic",
+    "rendezvous",
     "relay",
     "tokio",
     "tcp",

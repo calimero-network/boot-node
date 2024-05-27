@@ -5,8 +5,10 @@ use super::*;
 mod dcutr;
 mod gossipsub;
 mod identify;
+mod mdns;
 mod ping;
-mod relay_client;
+mod relay;
+mod rendezvous;
 
 pub trait EventHandler<E> {
     async fn handle(&mut self, event: E);
@@ -18,9 +20,11 @@ impl EventLoop {
             SwarmEvent::Behaviour(event) => match event {
                 BehaviourEvent::Identify(event) => events::EventHandler::handle(self, event).await,
                 BehaviourEvent::Gossipsub(event) => events::EventHandler::handle(self, event).await,
-                BehaviourEvent::RelayClient(event) => {
+                BehaviourEvent::Mdns(event) => events::EventHandler::handle(self, event).await,
+                BehaviourEvent::Rendezvous(event) => {
                     events::EventHandler::handle(self, event).await
                 }
+                BehaviourEvent::Relay(event) => events::EventHandler::handle(self, event).await,
                 BehaviourEvent::Ping(event) => events::EventHandler::handle(self, event).await,
                 BehaviourEvent::Dcutr(event) => events::EventHandler::handle(self, event).await,
             },
@@ -29,16 +33,26 @@ impl EventLoop {
                 address,
             } => {
                 let local_peer_id = *self.swarm.local_peer_id();
+                let address = match address.with_p2p(local_peer_id) {
+                    Ok(address) => address,
+                    Err(address) => {
+                        warn!(
+                            "Failed to sanitize listen address with p2p proto, address: {:?}, p2p proto: {:?}",
+                            address, local_peer_id
+                        );
+                        address
+                    }
+                };
                 if let Err(err) = self
                     .event_sender
                     .send(types::NetworkEvent::ListeningOn {
                         listener_id,
-                        address: address.with(multiaddr::Protocol::P2p(local_peer_id)),
+                        address,
                     })
                     .await
                 {
                     error!("Failed to send listening on event: {:?}", err);
-                }
+                };
             }
             SwarmEvent::IncomingConnection { .. } => {}
             SwarmEvent::ConnectionEstablished {
@@ -46,19 +60,7 @@ impl EventLoop {
             } => {
                 debug!(%peer_id, ?endpoint, "Connection established");
                 match endpoint {
-                    libp2p::core::ConnectedPoint::Dialer { address, .. } => {
-                        let addr_meta = match MultiaddrMeta::try_from(&address) {
-                            Ok(meta) => meta,
-                            Err(e) => {
-                                error!(%e, "Failed to parse dialer address meta for established connection");
-                                return;
-                            }
-                        };
-
-                        if addr_meta.is_relayed() {
-                            debug!("Connection established via relay");
-                        }
-
+                    libp2p::core::ConnectedPoint::Dialer { .. } => {
                         if let Some(sender) = self.pending_dial.remove(&peer_id) {
                             let _ = sender.send(Ok(Some(())));
                         }
@@ -94,22 +96,62 @@ impl EventLoop {
                 ..
             } => trace!("Dialing peer: {}", peer_id),
             SwarmEvent::ExpiredListenAddr { address, .. } => {
-                trace!("Expired listen address: {}", address)
+                debug!("Expired listen address: {}", address)
             }
             SwarmEvent::ListenerClosed {
                 addresses, reason, ..
-            } => trace!("Listener closed: {:?} {:?}", addresses, reason.err()),
-            SwarmEvent::ListenerError { error, .. } => trace!(%error, "Listener error"),
+            } => {
+                debug!("Listener closed: {:?} {:?}", addresses, reason.err())
+            }
+            SwarmEvent::ListenerError { error, .. } => debug!(%error, "Listener error"),
             SwarmEvent::NewExternalAddrCandidate { address } => {
-                trace!("New external address candidate: {}", address)
+                debug!("New external address candidate: {}", address)
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
-                trace!("External address confirmed: {}", address)
+                debug!("External address confirmed: {}", address);
             }
             SwarmEvent::ExternalAddrExpired { address } => {
-                trace!("External address expired: {}", address)
+                debug!("External address expired: {}", address)
             }
-            unhandled => warn!("Unhandled event: {:?}", unhandled),
+            SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
+                debug!("New external address of peer: {} {}", peer_id, address)
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) async fn handle_rendezvous_discover(&mut self) {
+        for (peer_id, entry) in self.rendezvous.iter() {
+            if entry.identify_state.is_exchanged() {
+                self.swarm.behaviour_mut().rendezvous.discover(
+                    Some(self.rendezvous_namespace.clone()),
+                    entry.cookie.clone(),
+                    None,
+                    *peer_id,
+                );
+            }
+        }
+    }
+
+    pub(super) async fn handle_rendezvous_dial(&mut self) {
+        for (peer_id, entry) in self.rendezvous.iter() {
+            if self.swarm.is_connected(peer_id) {
+                continue;
+            };
+            if let Err(err) = self.swarm.dial(entry.address.clone()) {
+                error!("Failed to dial rendezvous peer: {:?}", err);
+            };
+        }
+    }
+
+    pub(super) async fn handle_relays_dial(&mut self) {
+        for (peer_id, entry) in self.relays.iter() {
+            if self.swarm.is_connected(peer_id) {
+                continue;
+            };
+            if let Err(err) = self.swarm.dial(entry.address.clone()) {
+                error!("Failed to dial relay peer: {:?}", err);
+            };
         }
     }
 }
