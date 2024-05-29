@@ -5,6 +5,7 @@ use super::*;
 mod dcutr;
 mod gossipsub;
 mod identify;
+mod kad;
 mod mdns;
 mod ping;
 mod relay;
@@ -18,15 +19,16 @@ impl EventLoop {
     pub(super) async fn handle_swarm_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
         match event {
             SwarmEvent::Behaviour(event) => match event {
-                BehaviourEvent::Identify(event) => events::EventHandler::handle(self, event).await,
+                BehaviourEvent::Dcutr(event) => events::EventHandler::handle(self, event).await,
                 BehaviourEvent::Gossipsub(event) => events::EventHandler::handle(self, event).await,
+                BehaviourEvent::Identify(event) => events::EventHandler::handle(self, event).await,
+                BehaviourEvent::Kad(event) => events::EventHandler::handle(self, event).await,
                 BehaviourEvent::Mdns(event) => events::EventHandler::handle(self, event).await,
+                BehaviourEvent::Ping(event) => events::EventHandler::handle(self, event).await,
+                BehaviourEvent::Relay(event) => events::EventHandler::handle(self, event).await,
                 BehaviourEvent::Rendezvous(event) => {
                     events::EventHandler::handle(self, event).await
                 }
-                BehaviourEvent::Relay(event) => events::EventHandler::handle(self, event).await,
-                BehaviourEvent::Ping(event) => events::EventHandler::handle(self, event).await,
-                BehaviourEvent::Dcutr(event) => events::EventHandler::handle(self, event).await,
             },
             SwarmEvent::NewListenAddr {
                 listener_id,
@@ -61,6 +63,9 @@ impl EventLoop {
                 debug!(%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { .. } => {
+                        self.network_state
+                            .add_peer_addr(peer_id, endpoint.get_remote_address());
+
                         if let Some(sender) = self.pending_dial.remove(&peer_id) {
                             let _ = sender.send(Ok(Some(())));
                         }
@@ -79,6 +84,11 @@ impl EventLoop {
                     "Connection closed: {} {:?} {:?} {} {:?}",
                     peer_id, connection_id, endpoint, num_established, cause
                 );
+                if !self.swarm.is_connected(&peer_id)
+                    && !self.network_state.is_peer_of_interest(&peer_id)
+                {
+                    self.network_state.remove_peer(&peer_id);
+                }
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 debug!(%error, ?peer_id, "Outgoing connection error");
@@ -103,55 +113,30 @@ impl EventLoop {
             } => {
                 debug!("Listener closed: {:?} {:?}", addresses, reason.err())
             }
-            SwarmEvent::ListenerError { error, .. } => debug!(%error, "Listener error"),
+            SwarmEvent::ListenerError { error, .. } => info!(%error, "Listener error"),
             SwarmEvent::NewExternalAddrCandidate { address } => {
                 debug!("New external address candidate: {}", address)
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
                 debug!("External address confirmed: {}", address);
+                self.network_state.set_pending_addr_changes();
+
+                if let Err(err) = self.broadcast_rendezvous_registrations() {
+                    error!(%err, "Failed to handle rendezvous register");
+                };
             }
             SwarmEvent::ExternalAddrExpired { address } => {
-                debug!("External address expired: {}", address)
+                debug!("External address expired: {}", address);
+                self.network_state.set_pending_addr_changes();
+
+                if let Err(err) = self.broadcast_rendezvous_registrations() {
+                    error!(%err, "Failed to handle rendezvous register");
+                };
             }
             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
                 debug!("New external address of peer: {} {}", peer_id, address)
             }
             _ => {}
-        }
-    }
-
-    pub(super) async fn handle_rendezvous_discover(&mut self) {
-        for (peer_id, entry) in self.rendezvous.iter() {
-            if entry.identify_state.is_exchanged() {
-                self.swarm.behaviour_mut().rendezvous.discover(
-                    Some(self.rendezvous_namespace.clone()),
-                    entry.cookie.clone(),
-                    None,
-                    *peer_id,
-                );
-            }
-        }
-    }
-
-    pub(super) async fn handle_rendezvous_dial(&mut self) {
-        for (peer_id, entry) in self.rendezvous.iter() {
-            if self.swarm.is_connected(peer_id) {
-                continue;
-            };
-            if let Err(err) = self.swarm.dial(entry.address.clone()) {
-                error!("Failed to dial rendezvous peer: {:?}", err);
-            };
-        }
-    }
-
-    pub(super) async fn handle_relays_dial(&mut self) {
-        for (peer_id, entry) in self.relays.iter() {
-            if self.swarm.is_connected(peer_id) {
-                continue;
-            };
-            if let Err(err) = self.swarm.dial(entry.address.clone()) {
-                error!("Failed to dial relay peer: {:?}", err);
-            };
         }
     }
 }

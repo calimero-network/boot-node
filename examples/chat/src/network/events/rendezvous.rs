@@ -14,23 +14,27 @@ impl EventHandler<rendezvous::client::Event> for EventLoop {
                 registrations,
                 cookie,
             } => {
-                if let Some(entry) = self.rendezvous.get_mut(&rendezvous_node) {
-                    entry.cookie = Some(cookie);
-                }
+                if let Err(err) = self
+                    .network_state
+                    .update_rendezvous_cookie(&rendezvous_node, cookie)
+                {
+                    error!(%err, "Failed to update peer rendezvous cookie");
+                    return;
+                };
 
                 for registration in registrations {
                     if registration.record.peer_id() == *self.swarm.local_peer_id() {
                         continue;
                     }
 
+                    let peer = registration.record.peer_id();
+                    debug!(%peer, "Discovered peer via rendezvous");
                     if self.swarm.is_connected(&registration.record.peer_id()) {
                         continue;
                     };
 
                     for address in registration.record.addresses() {
-                        let peer = registration.record.peer_id();
-                        debug!(%peer, %address, "Discovered peer via rendezvous");
-
+                        debug!(%peer, %address, "Dialing peer discovered via rendezvous");
                         if let Err(err) = self.swarm.dial(address.clone()) {
                             error!("Failed to dial peer: {:?}", err);
                         }
@@ -40,29 +44,28 @@ impl EventHandler<rendezvous::client::Event> for EventLoop {
             rendezvous::client::Event::Registered {
                 rendezvous_node, ..
             } => {
-                if let Some(entry) = self.rendezvous.get(&rendezvous_node) {
-                    if entry.cookie.is_none() {
-                        self.swarm.behaviour_mut().rendezvous.discover(
-                            Some(self.rendezvous_namespace.clone()),
-                            entry.cookie.clone(),
-                            None,
-                            rendezvous_node,
-                        );
+                if let Some(peer_info) = self.network_state.get_peer_info(&rendezvous_node) {
+                    if peer_info.rendezvous_cookie().is_none() {
+                        debug!(%rendezvous_node, "Discovering peers via rendezvous after registration");
+                        if let Err(err) = self.perform_rendezvous_discovery(&rendezvous_node) {
+                            error!(%err, "Failed to run rendezvous discovery after registration");
+                        }
                     }
                 }
             }
-            rendezvous::client::Event::Expired { peer } => {
-                let local_peer_id = *self.swarm.local_peer_id();
-                if peer == local_peer_id {
-                    if let Err(err) = self.swarm.behaviour_mut().rendezvous.register(
-                        self.rendezvous_namespace.clone(),
-                        peer,
-                        None,
-                    ) {
-                        error!(%err, "Failed to re-register at rendezvous");
-                    };
-                    debug!("Re-registered at rendezvous");
-                }
+            rendezvous::client::Event::DiscoverFailed {
+                rendezvous_node,
+                namespace,
+                error,
+            } => {
+                error!(?rendezvous_node, ?namespace, error_code=?error, "Rendezvous discovery failed");
+            }
+            rendezvous::client::Event::RegisterFailed {
+                rendezvous_node,
+                namespace,
+                error,
+            } => {
+                error!(?rendezvous_node, ?namespace, error_code=?error, "Rendezvous registration failed");
             }
             _ => {}
         }

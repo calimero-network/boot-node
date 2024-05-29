@@ -70,9 +70,8 @@ async fn main() -> eyre::Result<()> {
     let (network_client, mut network_events) = network::run(
         keypair.clone(),
         opt.port,
+        opt.boot_nodes.clone(),
         libp2p::rendezvous::Namespace::new(opt.rendezvous_namespace)?,
-        opt.boot_nodes.clone(),
-        opt.boot_nodes.clone(),
     )
     .await?;
 

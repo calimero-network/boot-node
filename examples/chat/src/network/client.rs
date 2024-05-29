@@ -77,7 +77,7 @@ impl NetworkClient {
 
         receiver.await.expect("Sender not to be dropped.")
     }
-    pub async fn peer_info(&self) -> super::PeerInfo {
+    pub async fn peer_info(&self) -> super::PeersInfo {
         let (sender, receiver) = oneshot::channel();
 
         self.sender
@@ -88,7 +88,7 @@ impl NetworkClient {
         receiver.await.expect("Sender not to be dropped.")
     }
 
-    pub async fn mesh_peer_info(&self, topic: gossipsub::TopicHash) -> super::MeshPeerInfo {
+    pub async fn mesh_peer_info(&self, topic: gossipsub::TopicHash) -> super::MeshPeersInfo {
         let (sender, receiver) = oneshot::channel();
 
         self.sender
