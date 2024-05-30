@@ -60,10 +60,10 @@ impl EventLoop {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                debug!(%peer_id, ?endpoint, "Connection established");
+                info!(%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { .. } => {
-                        self.network_state
+                        self.discovery_state
                             .add_peer_addr(peer_id, endpoint.get_remote_address());
 
                         if let Some(sender) = self.pending_dial.remove(&peer_id) {
@@ -85,9 +85,9 @@ impl EventLoop {
                     peer_id, connection_id, endpoint, num_established, cause
                 );
                 if !self.swarm.is_connected(&peer_id)
-                    && !self.network_state.is_peer_of_interest(&peer_id)
+                    && !self.discovery_state.is_peer_of_interest(&peer_id)
                 {
-                    self.network_state.remove_peer(&peer_id);
+                    self.discovery_state.remove_peer(&peer_id);
                 }
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
@@ -98,8 +98,12 @@ impl EventLoop {
                     }
                 }
             }
-            SwarmEvent::IncomingConnectionError { error, .. } => {
-                debug!(%error, "Incoming connection error")
+            SwarmEvent::IncomingConnectionError {
+                send_back_addr,
+                error,
+                ..
+            } => {
+                debug!(%error, %send_back_addr, "Incoming connection error")
             }
             SwarmEvent::Dialing {
                 peer_id: Some(peer_id),
@@ -119,7 +123,7 @@ impl EventLoop {
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
                 debug!("External address confirmed: {}", address);
-                self.network_state.set_pending_addr_changes();
+                self.discovery_state.set_pending_addr_changes();
 
                 if let Err(err) = self.broadcast_rendezvous_registrations() {
                     error!(%err, "Failed to handle rendezvous register");
@@ -127,7 +131,7 @@ impl EventLoop {
             }
             SwarmEvent::ExternalAddrExpired { address } => {
                 debug!("External address expired: {}", address);
-                self.network_state.set_pending_addr_changes();
+                self.discovery_state.set_pending_addr_changes();
 
                 if let Err(err) = self.broadcast_rendezvous_registrations() {
                     error!(%err, "Failed to handle rendezvous register");

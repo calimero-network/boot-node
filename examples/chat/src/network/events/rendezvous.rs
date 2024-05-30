@@ -15,7 +15,7 @@ impl EventHandler<rendezvous::client::Event> for EventLoop {
                 cookie,
             } => {
                 if let Err(err) = self
-                    .network_state
+                    .discovery_state
                     .update_rendezvous_cookie(&rendezvous_node, cookie)
                 {
                     error!(%err, "Failed to update peer rendezvous cookie");
@@ -44,7 +44,7 @@ impl EventHandler<rendezvous::client::Event> for EventLoop {
             rendezvous::client::Event::Registered {
                 rendezvous_node, ..
             } => {
-                if let Some(peer_info) = self.network_state.get_peer_info(&rendezvous_node) {
+                if let Some(peer_info) = self.discovery_state.get_peer_info(&rendezvous_node) {
                     if peer_info.rendezvous_cookie().is_none() {
                         debug!(%rendezvous_node, "Discovering peers via rendezvous after registration");
                         if let Err(err) = self.perform_rendezvous_discovery(&rendezvous_node) {

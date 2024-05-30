@@ -148,7 +148,7 @@ pub(crate) struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<types::NetworkEvent>,
-    network_state: discovery::model::DiscoveryState,
+    discovery_state: discovery::DiscoveryState,
     rendezvous_namespace: rendezvous::Namespace,
     pending_dial: HashMap<PeerId, oneshot::Sender<eyre::Result<Option<()>>>>,
 }
@@ -164,7 +164,7 @@ impl EventLoop {
             swarm,
             command_receiver,
             event_sender,
-            network_state: discovery::model::DiscoveryState::new(),
+            discovery_state: discovery::DiscoveryState::new(),
             rendezvous_namespace,
             pending_dial: Default::default(),
         }
@@ -180,7 +180,6 @@ impl EventLoop {
                     let Some(c) = command else { break };
                     self.handle_command(c).await;
                 }
-                // _ = relay_dial_tick.tick() => self.handle_relay_reservations().await,
                 _ = rendezvous_discover_tick.tick() => self.handle_rendezvous_discoveries().await,
             }
         }
@@ -251,24 +250,36 @@ impl EventLoop {
                 let _ = sender.send(Ok(id));
             }
             Command::PeerInfo { sender } => {
-                let peers: Vec<PeerId> = self
+                let peers = self
                     .swarm
                     .connected_peers()
                     .into_iter()
                     .map(|peer| peer.clone())
-                    .collect();
+                    .collect::<Vec<_>>();
                 let count = peers.len();
 
-                let _ = sender.send(PeersInfo { count, peers });
+                let discovered_peers = self
+                    .discovery_state
+                    .get_peers()
+                    .map(|(id, peer)| (id.clone(), peer.clone()))
+                    .collect::<Vec<_>>();
+                let discovered_count = discovered_peers.len();
+
+                let _ = sender.send(PeersInfo {
+                    count,
+                    peers,
+                    discovered_count,
+                    discovered_peers,
+                });
             }
             Command::MeshPeerCount { topic, sender } => {
-                let peers: Vec<PeerId> = self
+                let peers = self
                     .swarm
                     .behaviour_mut()
                     .gossipsub
                     .mesh_peers(&topic)
                     .map(|peer| peer.clone())
-                    .collect();
+                    .collect::<Vec<_>>();
                 let count = peers.len();
 
                 let _ = sender.send(MeshPeersInfo { count, peers });
@@ -314,6 +325,8 @@ pub(crate) enum Command {
 pub(crate) struct PeersInfo {
     count: usize,
     peers: Vec<PeerId>,
+    discovered_count: usize,
+    discovered_peers: Vec<(PeerId, discovery::PeerInfo)>,
 }
 
 #[allow(dead_code)] // Info structs for pretty printing

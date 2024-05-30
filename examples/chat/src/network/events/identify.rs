@@ -14,20 +14,20 @@ impl EventHandler<identify::Event> for EventLoop {
                 info: identify::Info { protocols, .. },
             } => {
                 if let Err(err) = self
-                    .network_state
+                    .discovery_state
                     .update_peer_protocols(&peer_id, protocols)
                 {
                     error!(%err, "Failed to update peer protocols");
                     return;
                 }
 
-                if self.network_state.is_peer_relay(&peer_id) {
+                if self.discovery_state.is_peer_relay(&peer_id) {
                     if let Err(err) = self.create_relay_reservation(&peer_id) {
                         error!(%err, "Failed to handle relay reservation");
                     };
                 }
 
-                if self.network_state.is_peer_rendezvous(&peer_id) {
+                if self.discovery_state.is_peer_rendezvous(&peer_id) {
                     if let Err(err) = self.perform_rendezvous_discovery(&peer_id) {
                         error!(%err, "Failed to perform rendezvous discovery");
                     };

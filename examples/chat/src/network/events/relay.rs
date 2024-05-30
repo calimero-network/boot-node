@@ -10,9 +10,9 @@ impl EventHandler<relay::client::Event> for EventLoop {
 
         match event {
             relay::client::Event::ReservationReqAccepted { relay_peer_id, .. } => {
-                if let Err(err) = self.network_state.update_relay_reservation_status(
+                if let Err(err) = self.discovery_state.update_relay_reservation_status(
                     &relay_peer_id,
-                    discovery::model::RelayReservationStatus::Accepted,
+                    discovery::RelayReservationStatus::Accepted,
                 ) {
                     error!(%err, "Failed to update peer relay reservation status");
                     return;
