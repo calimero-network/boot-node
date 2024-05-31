@@ -81,7 +81,7 @@ impl NetworkClient {
         let (sender, receiver) = oneshot::channel();
 
         self.sender
-            .send(Command::PeerInfo { sender })
+            .send(Command::PeersInfo { sender })
             .await
             .expect("Command receiver not to be dropped.");
 
@@ -92,7 +92,7 @@ impl NetworkClient {
         let (sender, receiver) = oneshot::channel();
 
         self.sender
-            .send(Command::MeshPeerCount { topic, sender })
+            .send(Command::MeshPeersCount { topic, sender })
             .await
             .expect("Command receiver not to be dropped.");
 

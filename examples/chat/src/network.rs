@@ -9,7 +9,7 @@ use libp2p::{
 use multiaddr::Multiaddr;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 pub mod client;
 pub mod discovery;
@@ -98,8 +98,7 @@ async fn init(
             ),
             kad: {
                 let mut kademlia_config = kad::Config::default();
-                kademlia_config
-                    .set_protocol_names(std::iter::once(CALIMERO_KAD_PROTO_NAME).collect());
+                kademlia_config.set_protocol_names(vec![CALIMERO_KAD_PROTO_NAME]);
 
                 let mut kademlia = kad::Behaviour::with_config(
                     peer_id,
@@ -148,7 +147,7 @@ pub(crate) struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<types::NetworkEvent>,
-    discovery_state: discovery::DiscoveryState,
+    discovery: discovery::Discovery,
     pending_dial: HashMap<PeerId, oneshot::Sender<eyre::Result<Option<()>>>>,
 }
 
@@ -163,13 +162,21 @@ impl EventLoop {
             swarm,
             command_receiver,
             event_sender,
-            discovery_state: discovery::DiscoveryState::new(rendezvous_namespace),
+            // discovery_state: discovery::DiscoveryState::new(rendezvous_namespace, 0.5),
+            discovery: discovery::Discovery::new(discovery::DiscoveryConfig::new(
+                discovery::RendezvousConfig::new(
+                    rendezvous_namespace,
+                    Duration::from_secs(90),
+                    0.5,
+                ),
+            )),
             pending_dial: Default::default(),
         }
     }
 
     pub(crate) async fn run(mut self) {
-        let mut rendezvous_discover_tick = tokio::time::interval(Duration::from_secs(90));
+        let mut rendezvous_discover_tick =
+            tokio::time::interval(self.discovery.config.rendezvous.discovery_interval);
 
         loop {
             tokio::select! {
@@ -247,7 +254,7 @@ impl EventLoop {
 
                 let _ = sender.send(Ok(id));
             }
-            Command::PeerInfo { sender } => {
+            Command::PeersInfo { sender } => {
                 let peers = self
                     .swarm
                     .connected_peers()
@@ -257,7 +264,8 @@ impl EventLoop {
                 let count = peers.len();
 
                 let discovered_peers = self
-                    .discovery_state
+                    .discovery
+                    .state
                     .get_peers()
                     .map(|(id, peer)| (id.clone(), peer.clone()))
                     .collect::<Vec<_>>();
@@ -270,7 +278,7 @@ impl EventLoop {
                     discovered_peers,
                 });
             }
-            Command::MeshPeerCount { topic, sender } => {
+            Command::MeshPeersCount { topic, sender } => {
                 let peers = self
                     .swarm
                     .behaviour_mut()
@@ -309,10 +317,10 @@ pub(crate) enum Command {
         data: Vec<u8>,
         sender: oneshot::Sender<eyre::Result<gossipsub::MessageId>>,
     },
-    PeerInfo {
+    PeersInfo {
         sender: oneshot::Sender<PeersInfo>,
     },
-    MeshPeerCount {
+    MeshPeersCount {
         topic: gossipsub::TopicHash,
         sender: oneshot::Sender<MeshPeersInfo>,
     },
@@ -324,7 +332,7 @@ pub(crate) struct PeersInfo {
     count: usize,
     peers: Vec<PeerId>,
     discovered_count: usize,
-    discovered_peers: Vec<(PeerId, discovery::PeerInfo)>,
+    discovered_peers: Vec<(PeerId, discovery::state::PeerInfo)>,
 }
 
 #[allow(dead_code)] // Info structs for pretty printing

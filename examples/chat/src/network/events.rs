@@ -1,4 +1,4 @@
-use tracing::error;
+use tracing::{error, info};
 
 use super::*;
 
@@ -35,26 +35,16 @@ impl EventLoop {
                 address,
             } => {
                 let local_peer_id = *self.swarm.local_peer_id();
-                let address = match address.with_p2p(local_peer_id) {
-                    Ok(address) => address,
-                    Err(address) => {
-                        warn!(
-                            "Failed to sanitize listen address with p2p proto, address: {:?}, p2p proto: {:?}",
-                            address, local_peer_id
-                        );
-                        address
-                    }
-                };
                 if let Err(err) = self
                     .event_sender
                     .send(types::NetworkEvent::ListeningOn {
                         listener_id,
-                        address,
+                        address: address.with(multiaddr::Protocol::P2p(local_peer_id)),
                     })
                     .await
                 {
                     error!("Failed to send listening on event: {:?}", err);
-                };
+                }
             }
             SwarmEvent::IncomingConnection { .. } => {}
             SwarmEvent::ConnectionEstablished {
@@ -63,7 +53,8 @@ impl EventLoop {
                 debug!(%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { .. } => {
-                        self.discovery_state
+                        self.discovery
+                            .state
                             .add_peer_addr(peer_id, endpoint.get_remote_address());
 
                         if let Some(sender) = self.pending_dial.remove(&peer_id) {
@@ -85,62 +76,112 @@ impl EventLoop {
                     peer_id, connection_id, endpoint, num_established, cause
                 );
                 if !self.swarm.is_connected(&peer_id)
-                    && !self.discovery_state.is_peer_of_interest(&peer_id)
+                    && !self.discovery.state.is_peer_relay(&peer_id)
+                    && !self.discovery.state.is_peer_rendezvous(&peer_id)
                 {
-                    self.discovery_state.remove_peer(&peer_id);
+                    self.discovery.state.remove_peer(&peer_id);
                 }
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                debug!(%error, ?peer_id, "Outgoing connection error");
                 if let Some(peer_id) = peer_id {
                     if let Some(sender) = self.pending_dial.remove(&peer_id) {
                         let _ = sender.send(Err(eyre::eyre!(error)));
                     }
                 }
             }
-            SwarmEvent::IncomingConnectionError {
-                send_back_addr,
-                error,
-                ..
-            } => {
-                debug!(%error, %send_back_addr, "Incoming connection error")
-            }
+            SwarmEvent::IncomingConnectionError { .. } => {}
             SwarmEvent::Dialing {
                 peer_id: Some(peer_id),
                 ..
-            } => trace!("Dialing peer: {}", peer_id),
+            } => debug!("Dialing peer: {}", peer_id),
             SwarmEvent::ExpiredListenAddr { address, .. } => {
-                debug!("Expired listen address: {}", address)
+                trace!("Expired listen address: {}", address)
             }
             SwarmEvent::ListenerClosed {
                 addresses, reason, ..
-            } => {
-                debug!("Listener closed: {:?} {:?}", addresses, reason.err())
-            }
-            SwarmEvent::ListenerError { error, .. } => info!(%error, "Listener error"),
+            } => trace!("Listener closed: {:?} {:?}", addresses, reason.err()),
+            SwarmEvent::ListenerError { error, .. } => trace!("Listener error: {:?}", error),
             SwarmEvent::NewExternalAddrCandidate { address } => {
-                debug!("New external address candidate: {}", address)
+                trace!("New external address candidate: {}", address)
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
-                debug!("External address confirmed: {}", address);
-                self.discovery_state.set_pending_addr_changes();
-
-                if let Err(err) = self.broadcast_rendezvous_registrations() {
-                    error!(%err, "Failed to handle rendezvous register");
-                };
+                info!("External address confirmed: {}", address);
+                if let Ok(relayed_addr) = RelayedMultiaddr::try_from(&address) {
+                    self.discovery.state.update_relay_reservation_status(
+                        &relayed_addr.relay_peer,
+                        discovery::state::RelayReservationStatus::Accepted,
+                    );
+                    self.discovery.state.set_pending_addr_changes();
+                    if let Err(err) = self.broadcast_rendezvous_registrations() {
+                        error!(%err, "Failed to handle rendezvous register");
+                    };
+                }
             }
             SwarmEvent::ExternalAddrExpired { address } => {
                 debug!("External address expired: {}", address);
-                self.discovery_state.set_pending_addr_changes();
+                if let Ok(relayed_addr) = RelayedMultiaddr::try_from(&address) {
+                    self.discovery.state.update_relay_reservation_status(
+                        &relayed_addr.relay_peer_id(),
+                        discovery::state::RelayReservationStatus::Expired,
+                    );
 
-                if let Err(err) = self.broadcast_rendezvous_registrations() {
-                    error!(%err, "Failed to handle rendezvous register");
-                };
+                    self.discovery.state.set_pending_addr_changes();
+                    if let Err(err) = self.broadcast_rendezvous_registrations() {
+                        error!(%err, "Failed to handle rendezvous register");
+                    };
+                }
             }
             SwarmEvent::NewExternalAddrOfPeer { peer_id, address } => {
-                debug!("New external address of peer: {} {}", peer_id, address)
+                trace!("New external address of peer: {} {}", peer_id, address)
             }
-            _ => {}
+            unhandled => warn!("Unhandled event: {:?}", unhandled),
         }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct RelayedMultiaddr {
+    relay_peer: PeerId,
+}
+
+impl TryFrom<&Multiaddr> for RelayedMultiaddr {
+    type Error = &'static str;
+
+    fn try_from(value: &Multiaddr) -> Result<Self, Self::Error> {
+        let mut peer_ids = Vec::new();
+
+        let mut iter = value.iter();
+
+        while let Some(protocol) = iter.next() {
+            match protocol {
+                multiaddr::Protocol::P2pCircuit => {
+                    if peer_ids.is_empty() {
+                        return Err("expected at least one p2p proto before P2pCircuit");
+                    }
+                    let Some(multiaddr::Protocol::P2p(id)) = iter.next() else {
+                        return Err("expected p2p proto after P2pCircuit");
+                    };
+                    peer_ids.push(id);
+                }
+                multiaddr::Protocol::P2p(id) => {
+                    peer_ids.push(id);
+                }
+                _ => {}
+            }
+        }
+
+        if peer_ids.len() < 2 {
+            return Err("expected at least two p2p protos, one for peer and one for relay");
+        }
+
+        Ok(Self {
+            relay_peer: peer_ids.remove(0),
+        })
+    }
+}
+
+impl RelayedMultiaddr {
+    fn relay_peer_id(&self) -> &PeerId {
+        &self.relay_peer
     }
 }
