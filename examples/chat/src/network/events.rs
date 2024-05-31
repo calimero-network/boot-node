@@ -60,7 +60,7 @@ impl EventLoop {
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
-                info!(%peer_id, ?endpoint, "Connection established");
+                debug!(%peer_id, ?endpoint, "Connection established");
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { .. } => {
                         self.discovery_state

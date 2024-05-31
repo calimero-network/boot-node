@@ -149,7 +149,6 @@ pub(crate) struct EventLoop {
     command_receiver: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<types::NetworkEvent>,
     discovery_state: discovery::DiscoveryState,
-    rendezvous_namespace: rendezvous::Namespace,
     pending_dial: HashMap<PeerId, oneshot::Sender<eyre::Result<Option<()>>>>,
 }
 
@@ -164,8 +163,7 @@ impl EventLoop {
             swarm,
             command_receiver,
             event_sender,
-            discovery_state: discovery::DiscoveryState::new(),
-            rendezvous_namespace,
+            discovery_state: discovery::DiscoveryState::new(rendezvous_namespace),
             pending_dial: Default::default(),
         }
     }

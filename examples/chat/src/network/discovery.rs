@@ -52,7 +52,7 @@ impl EventLoop {
 
         if peer_info.is_rendezvous_discovery_time() {
             self.swarm.behaviour_mut().rendezvous.discover(
-                Some(self.rendezvous_namespace.clone()),
+                Some(self.discovery_state.rendezvous_namespace.clone()),
                 peer_info.rendezvous_cookie().cloned(),
                 None,
                 *rendezvous_peer,
@@ -108,7 +108,7 @@ impl EventLoop {
         rendezvous_peer: &PeerId,
     ) -> eyre::Result<()> {
         if let Err(err) = self.swarm.behaviour_mut().rendezvous.register(
-            self.rendezvous_namespace.clone(),
+            self.discovery_state.rendezvous_namespace.clone(),
             *rendezvous_peer,
             None,
         ) {
@@ -119,7 +119,7 @@ impl EventLoop {
         }
 
         debug!(
-            %rendezvous_peer, rendezvous_namespace=%(self.rendezvous_namespace),
+            %rendezvous_peer, rendezvous_namespace=%(self.discovery_state.rendezvous_namespace),
             "Sent register request to rendezvous node"
         );
         Ok(())
@@ -187,15 +187,17 @@ pub(crate) struct DiscoveryState {
     peers: BTreeMap<PeerId, PeerInfo>,
     relay_index: BTreeSet<PeerId>,
     rendezvous_index: BTreeSet<PeerId>,
+    rendezvous_namespace: libp2p::rendezvous::Namespace,
     pending_addr_changes: bool,
 }
 
 impl DiscoveryState {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(rendezvous_namespace: libp2p::rendezvous::Namespace) -> Self {
         DiscoveryState {
             peers: Default::default(),
             relay_index: Default::default(),
             rendezvous_index: Default::default(),
+            rendezvous_namespace,
             pending_addr_changes: false,
         }
     }
