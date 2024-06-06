@@ -9,27 +9,16 @@ use super::EventLoop;
 
 #[derive(Debug)]
 pub struct Discovery {
-    pub config: DiscoveryConfig,
+    pub(crate) rendezvous_config: RendezvousConfig,
     pub(crate) state: state::DiscoveryState,
 }
 
 impl Discovery {
-    pub(crate) fn new(config: DiscoveryConfig) -> Self {
+    pub(crate) fn new(rendezvous_config: RendezvousConfig) -> Self {
         Discovery {
             state: Default::default(),
-            config,
+            rendezvous_config,
         }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct DiscoveryConfig {
-    pub rendezvous: RendezvousConfig,
-}
-
-impl DiscoveryConfig {
-    pub(crate) fn new(rendezvous: RendezvousConfig) -> Self {
-        DiscoveryConfig { rendezvous }
     }
 }
 
@@ -102,7 +91,7 @@ impl EventLoop {
             info.last_discovery_at().map_or(false, |instant| {
                 instant.elapsed()
                     > time::Duration::from_secs_f32(
-                        60.0 / self.discovery.config.rendezvous.discovery_rpm,
+                        60.0 / self.discovery.rendezvous_config.discovery_rpm,
                     )
             })
         });
@@ -115,7 +104,7 @@ impl EventLoop {
 
         if !is_throttled {
             self.swarm.behaviour_mut().rendezvous.discover(
-                Some(self.discovery.config.rendezvous.namespace.clone()),
+                Some(self.discovery.rendezvous_config.namespace.clone()),
                 peer_info
                     .rendezvous()
                     .and_then(|info| info.cookie())
@@ -172,7 +161,7 @@ impl EventLoop {
     // This function expectes that the relay peer is already connected.
     pub(crate) fn update_rendezvous_registration(&mut self, peer_id: &PeerId) -> eyre::Result<()> {
         if let Err(err) = self.swarm.behaviour_mut().rendezvous.register(
-            self.discovery.config.rendezvous.namespace.clone(),
+            self.discovery.rendezvous_config.namespace.clone(),
             *peer_id,
             None,
         ) {
@@ -183,7 +172,7 @@ impl EventLoop {
         }
 
         debug!(
-            %peer_id, rendezvous_namespace=%(self.discovery.config.rendezvous.namespace),
+            %peer_id, rendezvous_namespace=%(self.discovery.rendezvous_config.namespace),
             "Sent register request to rendezvous node"
         );
         Ok(())
@@ -220,16 +209,7 @@ impl EventLoop {
             .get_preferred_addr()
             .wrap_err("Failed to get preferred addr for relay peer")?;
 
-        let relayed_addr = match preferred_addr
-            .clone()
-            .with(multiaddr::Protocol::P2pCircuit)
-            .with_p2p(self.swarm.local_peer_id().clone())
-        {
-            Ok(addr) => addr,
-            Err(err) => {
-                eyre::bail!("Failed to construct relayed addr for relay peer: {:?}", err)
-            }
-        };
+        let relayed_addr = preferred_addr.clone().with(multiaddr::Protocol::P2pCircuit);
         self.swarm.listen_on(relayed_addr)?;
         self.discovery
             .state

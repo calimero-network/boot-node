@@ -1,4 +1,4 @@
-use tracing::{error, info};
+use tracing::error;
 
 use super::*;
 
@@ -83,19 +83,26 @@ impl EventLoop {
                 }
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                debug!("Outgoing connection error: {:?} {:?}", peer_id, error);
                 if let Some(peer_id) = peer_id {
                     if let Some(sender) = self.pending_dial.remove(&peer_id) {
                         let _ = sender.send(Err(eyre::eyre!(error)));
                     }
                 }
             }
-            SwarmEvent::IncomingConnectionError { .. } => {}
+            SwarmEvent::IncomingConnectionError {
+                send_back_addr,
+                error,
+                ..
+            } => {
+                debug!(?send_back_addr, %error, "Incoming connection error");
+            }
             SwarmEvent::Dialing {
                 peer_id: Some(peer_id),
                 ..
             } => debug!("Dialing peer: {}", peer_id),
             SwarmEvent::ExpiredListenAddr { address, .. } => {
-                trace!("Expired listen address: {}", address)
+                debug!("Expired listen address: {}", address)
             }
             SwarmEvent::ListenerClosed {
                 addresses, reason, ..
@@ -105,7 +112,7 @@ impl EventLoop {
                 trace!("New external address candidate: {}", address)
             }
             SwarmEvent::ExternalAddrConfirmed { address } => {
-                info!("External address confirmed: {}", address);
+                debug!("External address confirmed: {}", address);
                 if let Ok(relayed_addr) = RelayedMultiaddr::try_from(&address) {
                     self.discovery.state.update_relay_reservation_status(
                         &relayed_addr.relay_peer,
