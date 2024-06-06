@@ -162,13 +162,10 @@ impl EventLoop {
             swarm,
             command_receiver,
             event_sender,
-            // discovery_state: discovery::DiscoveryState::new(rendezvous_namespace, 0.5),
-            discovery: discovery::Discovery::new(discovery::DiscoveryConfig::new(
-                discovery::RendezvousConfig::new(
-                    rendezvous_namespace,
-                    Duration::from_secs(90),
-                    0.5,
-                ),
+            discovery: discovery::Discovery::new(discovery::RendezvousConfig::new(
+                rendezvous_namespace,
+                Duration::from_secs(90),
+                0.5,
             )),
             pending_dial: Default::default(),
         }
@@ -176,7 +173,7 @@ impl EventLoop {
 
     pub(crate) async fn run(mut self) {
         let mut rendezvous_discover_tick =
-            tokio::time::interval(self.discovery.config.rendezvous.discovery_interval);
+            tokio::time::interval(self.discovery.rendezvous_config.discovery_interval);
 
         loop {
             tokio::select! {
