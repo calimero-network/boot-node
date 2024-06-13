@@ -94,7 +94,7 @@ async fn main() -> eyre::Result<()> {
             let topic = gossipsub::IdentTopic::new(topic_name);
             network_client.subscribe(topic.clone()).await?;
 
-            // Wait for a second to allow the network some peers to connect
+            // Wait for a second to allow some peers to connect
             tokio::time::sleep(Duration::from_secs(1)).await;
 
             if let Err(err) =
@@ -120,7 +120,7 @@ async fn main() -> eyre::Result<()> {
                     }
                     line = stdin.next_line() => {
                         if let Some(line) = line? {
-                            handle_line(network_client.clone(), line).await?;
+                            handle_line(store.clone(), network_client.clone(), line).await?;
                         }
                     }
                 }
@@ -305,6 +305,7 @@ async fn perform_catchup(
 }
 
 async fn handle_line(
+    store: store::Store,
     network_client: network::client::NetworkClient,
     line: String,
 ) -> eyre::Result<()> {
@@ -354,10 +355,10 @@ async fn handle_line(
             let topic = gossipsub::IdentTopic::new(args.to_string());
             match network_client.subscribe(topic).await {
                 Ok(_) => {
-                    println!("{LINE_START} Peer dialed");
+                    println!("{LINE_START} Subscribed to topic");
                 }
                 Err(err) => {
-                    println!("{LINE_START} Failed to parse peer id: {:?}", err);
+                    println!("{LINE_START} Failed to subscribe to topic: {:?}", err);
                 }
             };
         }
@@ -373,10 +374,10 @@ async fn handle_line(
             let topic = gossipsub::IdentTopic::new(args.to_string());
             match network_client.unsubscribe(topic).await {
                 Ok(_) => {
-                    println!("{LINE_START} Peer dialed");
+                    println!("{LINE_START} Unsubscribed from topic");
                 }
                 Err(err) => {
-                    println!("{LINE_START} Failed to parse peer id: {:?}", err);
+                    println!("{LINE_START} Failed to unsubscribe from topic: {:?}", err);
                 }
             };
         }
@@ -418,6 +419,15 @@ async fn handle_line(
                     println!("{LINE_START} Failed to publish message: {:?}", err);
                 }
             };
+
+            // Wait for a second to allow some peers to connect
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            if let Err(err) =
+                perform_catchup(store.clone(), network_client.clone(), topic.hash()).await
+            {
+                error!(%err, "Failed to perform catchup");
+            }
         }
         "peers" => {
             let peer_info = network_client.peer_info().await;
