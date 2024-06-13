@@ -1,18 +1,22 @@
+use rand::prelude::SliceRandom;
 use std::str::FromStr;
+use std::time::Duration;
 
 use clap::Parser;
 use clap::ValueEnum;
+use futures_util::{SinkExt, StreamExt};
 use libp2p::gossipsub;
 use libp2p::identity;
 use libp2p::PeerId;
 use multiaddr::Multiaddr;
 use tokio::io::AsyncBufReadExt;
-use tracing::debug;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 mod network;
+mod store;
+mod types;
 
 #[derive(Debug, Parser)]
 #[clap(name = "Chat example")]
@@ -67,6 +71,8 @@ async fn main() -> eyre::Result<()> {
 
     let keypair = generate_ed25519(opt.secret_key_seed);
 
+    let store = store::Store::default();
+
     let (network_client, mut network_events) = network::run(
         keypair.clone(),
         opt.port,
@@ -86,7 +92,16 @@ async fn main() -> eyre::Result<()> {
         for topic_name in topic_names {
             info!("Subscribing to topic: {}", topic_name);
             let topic = gossipsub::IdentTopic::new(topic_name);
-            network_client.subscribe(topic).await?;
+            network_client.subscribe(topic.clone()).await?;
+
+            // Wait for a second to allow the network some peers to connect
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            if let Err(err) =
+                perform_catchup(store.clone(), network_client.clone(), topic.hash()).await
+            {
+                error!(%err, "Failed to perform catchup");
+            }
         }
     }
 
@@ -101,7 +116,7 @@ async fn main() -> eyre::Result<()> {
                         let Some(event) = event else {
                             break;
                         };
-                        handle_network_event(network_client.clone(), event, peer_id, false).await?;
+                        handle_network_event(store.clone(), network_client.clone(), event, peer_id, false).await?;
                     }
                     line = stdin.next_line() => {
                         if let Some(line) = line? {
@@ -113,7 +128,8 @@ async fn main() -> eyre::Result<()> {
         }
         Mode::Echo => {
             while let Some(event) = network_events.recv().await {
-                handle_network_event(network_client.clone(), event, peer_id, true).await?;
+                handle_network_event(store.clone(), network_client.clone(), event, peer_id, true)
+                    .await?;
             }
         }
     }
@@ -131,40 +147,161 @@ fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
 const LINE_START: &str = ">>>>>>>>>> ";
 
 async fn handle_network_event(
+    store: store::Store,
     network_client: network::client::NetworkClient,
     event: network::types::NetworkEvent,
-    peer_id: PeerId,
+    local_peer_id: PeerId,
     is_echo: bool,
 ) -> eyre::Result<()> {
     match event {
-        network::types::NetworkEvent::Message { message, .. } => {
-            let text = String::from_utf8_lossy(&message.data);
-            println!("{LINE_START} Received message: {:?}", text);
-
-            if is_echo {
-                if text.starts_with("echo") {
-                    debug!("Ignoring echo message");
-                    return Ok(());
-                }
-                let text = format!("echo ({}): '{}'", peer_id, text);
-
-                match network_client
-                    .publish(message.topic, text.into_bytes())
-                    .await
-                {
-                    Ok(_) => debug!("Echoed message back"),
-                    Err(err) => error!(%err, "Failed to echo message back"),
-                };
-            }
+        network::types::NetworkEvent::Subscribed { peer_id, topic } => {
+            info!("Peer '{}' subscribed to topic: {}", peer_id, topic);
         }
-        network::types::NetworkEvent::Subscribed { topic, .. } => {
-            debug!("Subscribed to {:?}", topic);
+        network::types::NetworkEvent::Message { message, .. } => {
+            if let Err(err) =
+                handle_message(store, network_client, local_peer_id, is_echo, message).await
+            {
+                error!(%err, "Failed to handle message");
+            }
         }
         network::types::NetworkEvent::ListeningOn { address, .. } => {
             info!("Listening on: {}", address);
         }
+        network::types::NetworkEvent::StreamOpened { peer_id, stream } => {
+            info!("Stream opened from peer: {}", peer_id);
+            if let Err(err) = handle_stream(store, stream).await {
+                error!(%err, "Failed to handle stream");
+            }
+
+            info!("Stream closed from peer: {:?}", peer_id);
+        }
     }
     Ok(())
+}
+
+async fn handle_message(
+    mut store: store::Store,
+    network_client: network::client::NetworkClient,
+    peer_id: PeerId,
+    is_echo: bool,
+    message: gossipsub::Message,
+) -> eyre::Result<()> {
+    let text = String::from_utf8_lossy(&message.data);
+    println!(
+        "{LINE_START} Received message: {:?}, from: {:?}",
+        text, message.source
+    );
+
+    store
+        .add_message(
+            types::ApplicationId::from(message.topic.clone().into_string()),
+            types::ChatMessage::new(message.source, message.data.clone()),
+        )
+        .await;
+
+    if !is_echo {
+        return Ok(());
+    }
+
+    if text.starts_with("echo") {
+        debug!("Ignoring echo message");
+        return Ok(());
+    }
+    let text = format!("echo ({}): '{}'", peer_id, text);
+
+    network_client
+        .publish(message.topic, text.into_bytes())
+        .await?;
+    Ok(())
+}
+
+async fn handle_stream(
+    store: store::Store,
+    mut stream: network::stream::Stream,
+) -> eyre::Result<()> {
+    let application_id = match stream.next().await {
+        Some(message) => match serde_json::from_slice(&message.data)? {
+            types::CatchupStreamMessage::Request(req) => {
+                types::ApplicationId::from(req.application_id)
+            }
+            message => {
+                eyre::bail!("Unexpected message: {:?}", message)
+            }
+        },
+        None => {
+            eyre::bail!("Stream closed unexpectedly")
+        }
+    };
+
+    let mut iter = store.batch_stream(application_id, 3);
+    while let Some(messages) = iter.next().await {
+        info!("Sending batch: {:?}", messages);
+        let response = serde_json::to_vec(&types::CatchupStreamMessage::Response(
+            types::CatchupResponse { messages },
+        ))?;
+
+        stream
+            .send(network::stream::Message { data: response })
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn perform_catchup(
+    mut store: store::Store,
+    network_client: network::client::NetworkClient,
+    topic: gossipsub::TopicHash,
+) -> eyre::Result<Option<()>> {
+    let mesh_peers = network_client.mesh_peers(topic.clone()).await;
+    let choosen_peer = match mesh_peers.choose(&mut rand::thread_rng()) {
+        Some(peer) => peer,
+        None => {
+            info!("No mesh peers found for topic: {}", topic);
+            return Ok(None);
+        }
+    };
+
+    let mut stream = network_client.open_stream(*choosen_peer).await?;
+    info!("Opened stream to peer: {:?}", choosen_peer);
+
+    let request = serde_json::to_vec(&types::CatchupStreamMessage::Request(
+        types::CatchupRequest {
+            application_id: topic.clone().into_string(),
+        },
+    ))?;
+
+    stream
+        .send(network::stream::Message { data: request })
+        .await?;
+
+    info!("Sent catchup request to peer: {:?}", choosen_peer);
+
+    while let Some(message) = stream.next().await {
+        match serde_json::from_slice(&message.data)? {
+            types::CatchupStreamMessage::Response(response) => {
+                for message in response.messages {
+                    let text = String::from_utf8_lossy(&message.data);
+                    println!(
+                        "{LINE_START} Received cacthup message: {:?}, original from: {:?}",
+                        text, message.source
+                    );
+
+                    store
+                        .add_message(
+                            types::ApplicationId::from(topic.clone().into_string()),
+                            message,
+                        )
+                        .await;
+                }
+            }
+            event => {
+                warn!(?event, "Unexpected event");
+            }
+        };
+    }
+
+    return Ok(Some(()));
 }
 
 async fn handle_line(
