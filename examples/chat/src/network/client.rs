@@ -78,17 +78,6 @@ impl NetworkClient {
         receiver.await.expect("Sender not to be dropped.")
     }
 
-    pub async fn mesh_peers(&self, topic: gossipsub::TopicHash) -> Vec<PeerId> {
-        let (sender, receiver) = oneshot::channel();
-
-        self.sender
-            .send(Command::MeshPeers { topic, sender })
-            .await
-            .expect("Command receiver not to be dropped.");
-
-        receiver.await.expect("Sender not to be dropped.")
-    }
-
     pub async fn open_stream(&self, peer_id: PeerId) -> eyre::Result<stream::Stream> {
         let (sender, receiver) = oneshot::channel();
 

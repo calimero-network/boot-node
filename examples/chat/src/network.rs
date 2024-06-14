@@ -280,17 +280,6 @@ impl EventLoop {
 
                 let _ = sender.send(Ok(id));
             }
-            Command::MeshPeers { topic, sender } => {
-                let peers = self
-                    .swarm
-                    .behaviour_mut()
-                    .gossipsub
-                    .mesh_peers(&topic)
-                    .map(|peer| peer.clone())
-                    .collect();
-
-                let _ = sender.send(peers);
-            }
             Command::OpenStream { peer_id, sender } => {
                 match self.open_stream(peer_id).await {
                     Ok(stream) => {
@@ -363,10 +352,6 @@ pub(crate) enum Command {
         topic: gossipsub::TopicHash,
         data: Vec<u8>,
         sender: oneshot::Sender<eyre::Result<gossipsub::MessageId>>,
-    },
-    MeshPeers {
-        topic: gossipsub::TopicHash,
-        sender: oneshot::Sender<Vec<PeerId>>,
     },
     OpenStream {
         peer_id: PeerId,
