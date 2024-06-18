@@ -253,13 +253,16 @@ impl Node {
 
     async fn handle_stream(&mut self, mut stream: network::stream::Stream) -> eyre::Result<()> {
         let application_id = match stream.next().await {
-            Some(message) => match serde_json::from_slice(&message.data)? {
-                types::CatchupStreamMessage::Request(req) => {
-                    types::ApplicationId::from(req.application_id)
-                }
-                message => {
-                    eyre::bail!("Unexpected message: {:?}", message)
-                }
+            Some(message) => match message {
+                Ok(message) => match serde_json::from_slice(&message.data)? {
+                    types::CatchupStreamMessage::Request(req) => {
+                        types::ApplicationId::from(req.application_id)
+                    }
+                    message => {
+                        eyre::bail!("Unexpected message: {:?}", message)
+                    }
+                },
+                Err(err) => eyre::bail!(err),
             },
             None => {
                 eyre::bail!("Stream closed unexpectedly")
@@ -302,27 +305,30 @@ impl Node {
         info!("Sent catchup request to peer: {:?}", choosen_peer);
 
         while let Some(message) = stream.next().await {
-            match serde_json::from_slice(&message.data)? {
-                types::CatchupStreamMessage::Response(response) => {
-                    for message in response.messages {
-                        let text = String::from_utf8_lossy(&message.data);
-                        println!(
-                            "{LINE_START} Received cacthup message: {:?}, original from: {:?}",
-                            text, message.source
-                        );
+            match message {
+                Ok(message) => match serde_json::from_slice(&message.data)? {
+                    types::CatchupStreamMessage::Response(response) => {
+                        for message in response.messages {
+                            let text = String::from_utf8_lossy(&message.data);
+                            println!(
+                                "{LINE_START} Received cacthup message: {:?}, original from: {:?}",
+                                text, message.source
+                            );
 
-                        self.store
-                            .add_message(
-                                types::ApplicationId::from(topic.clone().into_string()),
-                                message,
-                            )
-                            .await;
+                            self.store
+                                .add_message(
+                                    types::ApplicationId::from(topic.clone().into_string()),
+                                    message,
+                                )
+                                .await;
+                        }
                     }
-                }
-                event => {
-                    warn!(?event, "Unexpected event");
-                }
-            };
+                    event => {
+                        warn!(?event, "Unexpected event");
+                    }
+                },
+                Err(err) => eyre::bail!(err),
+            }
         }
 
         info!("Closed stream to peer: {:?}", choosen_peer);

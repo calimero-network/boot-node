@@ -6,7 +6,6 @@ use libp2p::PeerId;
 use tokio::io::BufStream;
 use tokio_util::codec::Framed;
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt};
-use tracing::error;
 
 use super::{types, EventLoop};
 
@@ -31,20 +30,11 @@ impl Stream {
 }
 
 impl FuturesStream for Stream {
-    type Item = Message;
+    type Item = Result<Message, CodecError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let inner = Pin::new(&mut self.get_mut().inner);
-        match inner.poll_next(cx) {
-            Poll::Ready(Some(Ok(message))) => Poll::Ready(Some(message)),
-            Poll::Ready(Some(Err(err))) => {
-                error!(%err, "Error while polling the inner stream");
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
+        inner.poll_next(cx)
     }
 }
 
