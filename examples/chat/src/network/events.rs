@@ -29,6 +29,7 @@ impl EventLoop {
                 BehaviourEvent::Rendezvous(event) => {
                     events::EventHandler::handle(self, event).await
                 }
+                BehaviourEvent::Stream(()) => {}
             },
             SwarmEvent::NewListenAddr {
                 listener_id,
@@ -51,6 +52,7 @@ impl EventLoop {
                 peer_id, endpoint, ..
             } => {
                 debug!(%peer_id, ?endpoint, "Connection established");
+
                 match endpoint {
                     libp2p::core::ConnectedPoint::Dialer { .. } => {
                         self.discovery
