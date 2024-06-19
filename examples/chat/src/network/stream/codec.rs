@@ -11,15 +11,8 @@ pub struct Message {
 #[derive(Debug, Error)]
 #[error("CodecError")]
 pub enum CodecError {
-    StdIo(std::io::Error),
-    EncodeDecode(std::io::Error),
+    StdIo(#[from] std::io::Error),
     SerDe(serde_json::Error),
-}
-
-impl From<std::io::Error> for CodecError {
-    fn from(err: std::io::Error) -> Self {
-        CodecError::StdIo(err)
-    }
 }
 
 #[derive(Debug)]
@@ -31,16 +24,13 @@ impl Decoder for MessageJsonCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let mut length_codec = LengthDelimitedCodec::new();
-        let frame = match length_codec.decode(src) {
-            Ok(Some(frame)) => frame,
-            Ok(None) => return Ok(None),
-            Err(e) => return Err(CodecError::EncodeDecode(e)),
+        let Some(frame) = length_codec.decode(src)? else {
+            return Ok(None);
         };
 
-        match serde_json::from_slice(&frame) {
-            Ok(frame) => Ok(Some(frame)),
-            Err(e) => Err(CodecError::SerDe(e)),
-        }
+        serde_json::from_slice(&frame)
+            .map(Some)
+            .map_err(CodecError::SerDe)
     }
 }
 
@@ -49,15 +39,11 @@ impl Encoder<Message> for MessageJsonCodec {
 
     fn encode(&mut self, item: Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let mut length_codec = LengthDelimitedCodec::new();
-        let json = match serde_json::to_vec(&item) {
-            Ok(json) => json,
-            Err(e) => return Err(CodecError::SerDe(e)),
-        };
+        let json = serde_json::to_vec(&item).map_err(CodecError::SerDe)?;
 
-        match length_codec.encode(Bytes::from(json), dst) {
-            Ok(()) => Ok(()),
-            Err(err) => Err(CodecError::EncodeDecode(err)),
-        }
+        length_codec
+            .encode(Bytes::from(json), dst)
+            .map_err(CodecError::StdIo)
     }
 }
 
