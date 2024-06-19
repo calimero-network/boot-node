@@ -17,5 +17,5 @@ jobs:
       - name: Setup rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cross
+      - name: Run cargo check
         run: cargo check --release
