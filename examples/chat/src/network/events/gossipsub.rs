@@ -9,14 +9,10 @@ impl EventHandler<gossipsub::Event> for EventLoop {
         debug!("{}: {:?}", "gossipsub".yellow(), event);
 
         match event {
-            gossipsub::Event::Message {
-                message_id: id,
-                message,
-                ..
-            } => {
+            gossipsub::Event::Message { message, .. } => {
                 if let Err(err) = self
                     .event_sender
-                    .send(types::NetworkEvent::Message { id, message })
+                    .send(types::NetworkEvent::Message { message })
                     .await
                 {
                     error!("Failed to send message event: {:?}", err);

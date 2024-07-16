@@ -31,15 +31,11 @@ impl EventLoop {
                 }
                 BehaviourEvent::Stream(()) => {}
             },
-            SwarmEvent::NewListenAddr {
-                listener_id,
-                address,
-            } => {
+            SwarmEvent::NewListenAddr { address, .. } => {
                 let local_peer_id = *self.swarm.local_peer_id();
                 if let Err(err) = self
                     .event_sender
                     .send(types::NetworkEvent::ListeningOn {
-                        listener_id,
                         address: address.with(multiaddr::Protocol::P2p(local_peer_id)),
                     })
                     .await

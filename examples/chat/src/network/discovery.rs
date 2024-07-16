@@ -166,7 +166,9 @@ impl EventLoop {
             None,
         ) {
             match err {
-                libp2p::rendezvous::client::RegisterError::NoExternalAddresses => {}
+                libp2p::rendezvous::client::RegisterError::NoExternalAddresses => {
+                    return Ok(());
+                }
                 err => eyre::bail!(err),
             }
         }
