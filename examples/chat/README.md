@@ -8,12 +8,12 @@ This examples show cases how to build chat application with DCUtR, mDNS, Relay, 
 ## Run
 Run first chat session in interactive mode with remote peer dial.
 ```
-cargo run -p chat-example -- --mode interactive --port 4002 --secret-key-seed 102 --gossip-topic-names calimero-network/examples/chat/v0.0.2 --boot-nodes /ip4/35.156.78.13/udp/4001/quic-v1/p2p/12D3KooWRnt7EmBwrNALhAXAgM151MdH7Ka9tvYS91ZUqnqwpjVg
+cargo run -p chat-example -- --mode interactive --port 4002 --secret-key-seed 102 --gossip-topic-names calimero-network/examples/chat/v0.0.2 --boot-nodes /ip4/18.156.18.6/udp/4001/quic-v1/p2p/12D3KooWMgoF9xzyeKJHtRvrYwdomheRbHPELagWZwTLmXb6bCVC
 ```
 
 Run second chat session in interactive mode with remote peer dial.
 ```
-cargo run -p chat-example -- --mode interactive --port 4003 --secret-key-seed 103 --gossip-topic-names calimero-network/examples/chat/v0.0.2 --boot-nodes /ip4/35.156.78.13/udp/4001/quic-v1/p2p/12D3KooWRnt7EmBwrNALhAXAgM151MdH7Ka9tvYS91ZUqnqwpjVg
+cargo run -p chat-example -- --mode interactive --port 4003 --secret-key-seed 103 --gossip-topic-names calimero-network/examples/chat/v0.0.2 --boot-nodes /ip4/18.156.18.6/udp/4001/quic-v1/p2p/12D3KooWMgoF9xzyeKJHtRvrYwdomheRbHPELagWZwTLmXb6bCVC
 ```
 
 In any interactive session publish new message manually:
