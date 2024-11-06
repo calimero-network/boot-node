@@ -12,6 +12,7 @@ use tracing_subscriber::EnvFilter;
 
 const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/kad/1.0.0");
+const MAX_RELAY_CIRCUIT_BYTES: u64 = 8 << 20; // 8 MiB
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
@@ -95,7 +96,11 @@ async fn main() -> eyre::Result<()> {
             },
             ping: ping::Behaviour::new(ping::Config::new()),
             rendezvous: rendezvous::server::Behaviour::new(rendezvous::server::Config::default()),
-            relay: relay::Behaviour::new(keypair.public().to_peer_id(), Default::default()),
+            relay: relay::Behaviour::new(keypair.public().to_peer_id(), {
+                let mut x = relay::Config::default();
+                x.max_circuit_bytes = MAX_RELAY_CIRCUIT_BYTES;
+                x
+            }),
         })?
         .build();
 
