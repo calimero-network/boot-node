@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "examples/dcutr", "examples/chat"]
+members = [".", "examples/dcutr", "examples/chat", "examples/autonat"]
 
 [package]
 name = "boot-node"

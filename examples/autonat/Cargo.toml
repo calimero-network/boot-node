@@ -1,0 +1,27 @@
+[package]
+name = "autonat"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libp2p = { version = "0.55.0", features = [
+    "dns",
+    "rsa",
+    "rendezvous",
+    "relay",
+    "quic",
+    "dcutr",
+    "tokio",
+    "tcp",
+    "noise",
+    "yamux",
+    "autonat",
+    "identify",
+    "macros",
+] }
+tokio = { version = "1.43.0", features = ["full"] }
+clap = { version = "4.5.6", features = ["derive"] }
+futures = { version = "0.3.31" }
+tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+chrono = { version = "0.4.40" }
