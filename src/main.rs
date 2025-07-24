@@ -12,7 +12,7 @@ use tracing_subscriber::EnvFilter;
 
 const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/kad/1.0.0");
-const MAX_RELAY_CIRCUIT_BYTES: u64 = 8 << 20; // 8 MiB
+const MAX_RELAY_CIRCUIT_BYTES: u64 = 100 << 20; // 100 MiB
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
