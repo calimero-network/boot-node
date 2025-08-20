@@ -6,9 +6,12 @@ use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{
     autonat, identify, identity, kad, ping, relay, rendezvous, Multiaddr, StreamProtocol, Swarm,
 };
+use libp2p_metrics::{Metrics, Recorder, Registry};
 use tracing::info;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
+
+mod http_service;
 
 const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/kad/1.0.0");
@@ -56,6 +59,8 @@ async fn main() -> eyre::Result<()> {
 
     info!("Peer id: {:?}", peer_id);
 
+    let mut metric_registry = Registry::default();
+
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_tcp(
@@ -64,6 +69,7 @@ async fn main() -> eyre::Result<()> {
             libp2p::yamux::Config::default,
         )?
         .with_quic()
+        .with_bandwidth_metrics(&mut metric_registry)
         .with_behaviour(|keypair| Behaviour {
             autonat: autonat::Behaviour::new(peer_id.clone(), Default::default()),
             identify: identify::Behaviour::new(identify::Config::new(
@@ -71,8 +77,7 @@ async fn main() -> eyre::Result<()> {
                 keypair.public(),
             )),
             kad: {
-                let mut kademlia_config = kad::Config::default();
-                kademlia_config.set_protocol_names(vec![CALIMERO_KAD_PROTO_NAME]);
+                let mut kademlia_config = kad::Config::new(CALIMERO_KAD_PROTO_NAME);
                 // Instantly remove records and provider records.
                 // TODO: figure out what to do with these values, ref: https://github.com/libp2p/rust-libp2p/blob/1aa016e1c7e3976748a726eab37af44d1c5b7a6e/misc/server/src/behaviour.rs#L38
                 kademlia_config.set_record_ttl(Some(std::time::Duration::from_secs(0)));
@@ -116,16 +121,28 @@ async fn main() -> eyre::Result<()> {
         .with(multiaddr::Protocol::QuicV1);
     swarm.listen_on(listen_addr_quic)?;
 
+    let metrics = Metrics::new(&mut metric_registry);
+    tokio::spawn(http_service::metrics_server(metric_registry));
+
     loop {
         let event = swarm.next().await;
-        handle_swarm_event(&mut swarm, event.expect("Swarm stream to be infinite.")).await;
+        handle_swarm_event(
+            &mut swarm,
+            event.expect("Swarm stream to be infinite."),
+            &metrics,
+        )
+        .await;
     }
 }
 
-async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<BehaviourEvent>) {
+async fn handle_swarm_event(
+    swarm: &mut Swarm<Behaviour>,
+    event: SwarmEvent<BehaviourEvent>,
+    metrics: &Metrics,
+) {
     match event {
         SwarmEvent::Behaviour(event) => {
-            handle_swarm_behaviour_event(swarm, event).await;
+            handle_swarm_behaviour_event(swarm, event, metrics).await;
         }
         SwarmEvent::NewListenAddr { address, .. } => {
             info!("Listening on {address:?}");
@@ -134,12 +151,17 @@ async fn handle_swarm_event(swarm: &mut Swarm<Behaviour>, event: SwarmEvent<Beha
     }
 }
 
-async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: BehaviourEvent) {
+async fn handle_swarm_behaviour_event(
+    swarm: &mut Swarm<Behaviour>,
+    event: BehaviourEvent,
+    metrics: &Metrics,
+) {
     match event {
         BehaviourEvent::Autonat(event) => {
             info!("AutoNat event: {event:?}");
         }
         BehaviourEvent::Identify(event) => {
+            metrics.record(&event);
             info!("Identify event: {event:?}");
             match event {
                 identify::Event::Received {
@@ -153,9 +175,11 @@ async fn handle_swarm_behaviour_event(swarm: &mut Swarm<Behaviour>, event: Behav
             }
         }
         BehaviourEvent::Kad(event) => {
+            metrics.record(&event);
             info!("Kad event: {event:?}");
         }
         BehaviourEvent::Relay(event) => {
+            metrics.record(&event);
             info!("Relay event: {event:?}");
         }
         BehaviourEvent::Rendezvous(event) => {

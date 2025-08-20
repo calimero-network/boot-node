@@ -3,22 +3,24 @@ members = [".", "examples/dcutr", "examples/chat", "examples/autonat"]
 
 [package]
 name = "boot-node"
-version = "0.5.2"
+version = "0.6.0"
 authors = ["Calimero Limited <info@calimero.network>"]
 edition = "2021"
 repository = "https://github.com/calimero-network/boot-node"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+axum = "0.7"
 camino = "1.1.6"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 eyre = "0.6.12"
 futures-util = "0.3.30"
-libp2p = { version = "0.53.2", features = [
+libp2p = { version = "0.56.0", features = [
     "autonat",
     "identify",
     "kad",
     "macros",
+    "metrics",
     "noise",
     "ping",
     "quic",
@@ -29,7 +31,9 @@ libp2p = { version = "0.53.2", features = [
     "tls",
     "yamux",
 ] }
+libp2p-metrics = "0.17.0"
 multiaddr = "0.18.1"
+prometheus-client = "0.23"
 serde = "1.0.196"
 serde_json = "1.0.113"
 tokio = { version = "1.35.1", features = ["macros", "rt", "rt-multi-thread"] }

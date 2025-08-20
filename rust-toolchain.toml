@@ -1,0 +1,9 @@
+[toolchain]
+channel = "1.89.0"
+components = ["cargo", "clippy"]
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3

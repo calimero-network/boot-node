@@ -11,7 +11,7 @@ bytes = "1.6.0"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 eyre = "0.6.12"
 futures-util = { version = "0.3.30" }
-libp2p = { version = "0.53.2", features = [
+libp2p = { version = "0.56.0", features = [
     "dcutr",
     "dns",
     "gossipsub",
