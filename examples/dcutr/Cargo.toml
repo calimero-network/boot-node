@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 camino = "1.1.6"
 clap = { version = "4.5.4", features = ["derive", "env"] }
 eyre = "0.6.12"
-libp2p = { version = "0.53.2", features = [
+libp2p = { version = "0.56.0", features = [
     "dcutr",
     "dns",
     "identify",

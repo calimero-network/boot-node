@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libp2p = { version = "0.55.0", features = [
+libp2p = { version = "0.56.0", features = [
     "dns",
     "rsa",
     "rendezvous",
