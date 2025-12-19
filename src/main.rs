@@ -3,13 +3,13 @@ use std::net::Ipv4Addr;
 use clap::Parser;
 use libp2p::futures::prelude::*;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
-use libp2p::{
-    autonat, identify, identity, kad, ping, relay, rendezvous, Multiaddr, StreamProtocol, Swarm,
-};
+use libp2p::{identify, identity, kad, ping, relay, rendezvous, Multiaddr, StreamProtocol, Swarm};
 use libp2p_metrics::{Metrics, Recorder, Registry};
 use tracing::info;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
+
+use calimero_network_primitives::autonat_v2;
 
 mod http_service;
 
@@ -19,7 +19,7 @@ const MAX_RELAY_CIRCUIT_BYTES: u64 = 100 << 20; // 100 MiB
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
-    autonat: autonat::Behaviour,
+    autonat: autonat_v2::Behaviour,
     identify: identify::Behaviour,
     kad: kad::Behaviour<kad::store::MemoryStore>,
     ping: ping::Behaviour,
@@ -33,7 +33,11 @@ struct Opt {
     /// The file with the protobuf encoded private key used to derive PeerId and sign network activity
     #[clap(long, value_name = "PRIVATE_KEY")]
     #[clap(env = "RELAY_SERVER_PRIVATE_KEY", hide_env_values = true)]
-    private_key: camino::Utf8PathBuf,
+    private_key: Option<camino::Utf8PathBuf>,
+
+    /// Generate an ephemeral keypair for development/debugging (ignored if --private-key is provided)
+    #[clap(long)]
+    dev: bool,
 
     /// The port used to listen on all interfaces
     #[clap(long, value_name = "PORT", default_value = "4001")]
@@ -53,8 +57,22 @@ async fn main() -> eyre::Result<()> {
 
     let opt = Opt::parse();
 
-    let mut bytes = std::fs::read(opt.private_key)?;
-    let keypair = identity::Keypair::from_protobuf_encoding(&mut bytes)?;
+    let keypair = match opt.private_key {
+        Some(path) => {
+            let bytes = std::fs::read(&path)?;
+            identity::Keypair::from_protobuf_encoding(&bytes)?
+        }
+        None if opt.dev => {
+            // Use a fixed seed for deterministic peer ID in dev mode
+            // This ensures the same PeerId across restarts for easier development
+            const DEV_SEED: [u8; 32] = *b"calimero-boot-node-dev-seed-key!";
+            tracing::warn!("Using hardcoded dev keypair - do not use in production");
+            identity::Keypair::ed25519_from_bytes(DEV_SEED)?
+        }
+        None => {
+            eyre::bail!("Either --private-key or --dev must be provided");
+        }
+    };
     let peer_id = keypair.public().to_peer_id();
 
     info!("Peer id: {:?}", peer_id);
@@ -70,42 +88,53 @@ async fn main() -> eyre::Result<()> {
         )?
         .with_quic()
         .with_bandwidth_metrics(&mut metric_registry)
-        .with_behaviour(|keypair| Behaviour {
-            autonat: autonat::Behaviour::new(peer_id.clone(), Default::default()),
-            identify: identify::Behaviour::new(identify::Config::new(
-                PROTOCOL_VERSION.to_owned(),
-                keypair.public(),
-            )),
-            kad: {
-                let mut kademlia_config = kad::Config::new(CALIMERO_KAD_PROTO_NAME);
-                // Instantly remove records and provider records.
-                // TODO: figure out what to do with these values, ref: https://github.com/libp2p/rust-libp2p/blob/1aa016e1c7e3976748a726eab37af44d1c5b7a6e/misc/server/src/behaviour.rs#L38
-                kademlia_config.set_record_ttl(Some(std::time::Duration::from_secs(0)));
-                kademlia_config.set_provider_record_ttl(Some(std::time::Duration::from_secs(0)));
+        .with_behaviour(|keypair| {
+            let mut autonat = autonat_v2::Behaviour::new(autonat_v2::Config::default());
+            // Enable server mode since boot-node is intended to be publicly reachable
+            autonat
+                .enable_server()
+                .expect("Server should enable on fresh behaviour");
 
-                let mut kademlia = kad::Behaviour::with_config(
-                    peer_id,
-                    kad::store::MemoryStore::new(peer_id),
-                    kademlia_config,
-                );
-                kademlia.set_mode(Some(kad::Mode::Server));
-                // TODO: implement support for adding bootstrap peers
-                // for peer in opt.bootstrap_peers.iter() {
-                //     kademlia.add_address(&PeerId::from_str(peer).unwrap(), bootaddr.clone());
-                // }
-                // if let Err(err) = kademlia.bootstrap() {
-                //     warn!(%err, "Failed to bootstrap Kademlia");
-                // };
+            Behaviour {
+                autonat,
+                identify: identify::Behaviour::new(identify::Config::new(
+                    PROTOCOL_VERSION.to_owned(),
+                    keypair.public(),
+                )),
+                kad: {
+                    let mut kademlia_config = kad::Config::new(CALIMERO_KAD_PROTO_NAME);
+                    // Instantly remove records and provider records.
+                    // TODO: figure out what to do with these values, ref: https://github.com/libp2p/rust-libp2p/blob/1aa016e1c7e3976748a726eab37af44d1c5b7a6e/misc/server/src/behaviour.rs#L38
+                    kademlia_config.set_record_ttl(Some(std::time::Duration::from_secs(0)));
+                    kademlia_config
+                        .set_provider_record_ttl(Some(std::time::Duration::from_secs(0)));
 
-                kademlia
-            },
-            ping: ping::Behaviour::new(ping::Config::new()),
-            rendezvous: rendezvous::server::Behaviour::new(rendezvous::server::Config::default()),
-            relay: relay::Behaviour::new(keypair.public().to_peer_id(), {
-                let mut x = relay::Config::default();
-                x.max_circuit_bytes = MAX_RELAY_CIRCUIT_BYTES;
-                x
-            }),
+                    let mut kademlia = kad::Behaviour::with_config(
+                        peer_id,
+                        kad::store::MemoryStore::new(peer_id),
+                        kademlia_config,
+                    );
+                    kademlia.set_mode(Some(kad::Mode::Server));
+                    // TODO: implement support for adding bootstrap peers
+                    // for peer in opt.bootstrap_peers.iter() {
+                    //     kademlia.add_address(&PeerId::from_str(peer).unwrap(), bootaddr.clone());
+                    // }
+                    // if let Err(err) = kademlia.bootstrap() {
+                    //     warn!(%err, "Failed to bootstrap Kademlia");
+                    // };
+
+                    kademlia
+                },
+                ping: ping::Behaviour::new(ping::Config::new()),
+                rendezvous: rendezvous::server::Behaviour::new(
+                    rendezvous::server::Config::default(),
+                ),
+                relay: relay::Behaviour::new(keypair.public().to_peer_id(), {
+                    let mut x = relay::Config::default();
+                    x.max_circuit_bytes = MAX_RELAY_CIRCUIT_BYTES;
+                    x
+                }),
+            }
         })?
         .build();
 
@@ -158,20 +187,18 @@ async fn handle_swarm_behaviour_event(
 ) {
     match event {
         BehaviourEvent::Autonat(event) => {
-            info!("AutoNat event: {event:?}");
+            handle_autonat_event(event);
         }
         BehaviourEvent::Identify(event) => {
             metrics.record(&event);
             info!("Identify event: {event:?}");
-            match event {
-                identify::Event::Received {
-                    info: identify::Info { observed_addr, .. },
-                    ..
-                } => {
-                    info!("Adding external address: {observed_addr:?}");
-                    swarm.add_external_address(observed_addr);
-                }
-                _ => {}
+            if let identify::Event::Received {
+                info: identify::Info { observed_addr, .. },
+                ..
+            } = event
+            {
+                info!("Adding external address: {observed_addr:?}");
+                swarm.add_external_address(observed_addr);
             }
         }
         BehaviourEvent::Kad(event) => {
@@ -186,5 +213,69 @@ async fn handle_swarm_behaviour_event(
             info!("Rendezvous event: {event:?}");
         }
         _ => {}
+    }
+}
+
+fn handle_autonat_event(event: autonat_v2::Event) {
+    match event {
+        autonat_v2::Event::Client {
+            tested_addr,
+            bytes_sent,
+            server,
+            result,
+        } => match result {
+            autonat_v2::TestResult::Reachable { addr } => {
+                info!(
+                    %tested_addr,
+                    %bytes_sent,
+                    %server,
+                    confirmed_addr = %addr,
+                    "AutoNAT v2 client: address confirmed reachable"
+                );
+            }
+            autonat_v2::TestResult::Failed { error } => {
+                info!(
+                    %tested_addr,
+                    %bytes_sent,
+                    %server,
+                    %error,
+                    "AutoNAT v2 client: address test failed"
+                );
+            }
+        },
+        autonat_v2::Event::Server {
+            all_addrs,
+            tested_addr,
+            client,
+            data_amount,
+            result,
+        } => match result {
+            autonat_v2::TestResult::Reachable { addr } => {
+                info!(
+                    ?all_addrs,
+                    %tested_addr,
+                    %client,
+                    %data_amount,
+                    confirmed_addr = %addr,
+                    "AutoNAT v2 server: served dial-back, client is reachable"
+                );
+            }
+            autonat_v2::TestResult::Failed { error } => {
+                info!(
+                    ?all_addrs,
+                    %tested_addr,
+                    %client,
+                    %data_amount,
+                    %error,
+                    "AutoNAT v2 server: dial-back failed"
+                );
+            }
+        },
+        autonat_v2::Event::ModeChanged { old_mode, new_mode } => {
+            info!(?old_mode, ?new_mode, "AutoNAT v2 mode changed");
+        }
+        autonat_v2::Event::PeerHasServerSupport { peer_id } => {
+            info!(%peer_id, "AutoNAT v2: discovered peer has server support");
+        }
     }
 }

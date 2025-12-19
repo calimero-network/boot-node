@@ -3,6 +3,62 @@
 version = 4
 
 [[package]]
+name = "actix"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de7fa236829ba0841304542f7614c42b80fca007455315c45c785ccfa873a85b"
+dependencies = [
+ "actix-macros",
+ "actix-rt",
+ "actix_derive",
+ "bitflags 2.9.2",
+ "bytes",
+ "crossbeam-channel",
+ "futures-core",
+ "futures-sink",
+ "futures-task",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "pin-project-lite",
+ "smallvec",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "actix-macros"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01ed3140b2f8d422c68afa1ed2e85d996ea619c988ac834d255db32138655cb"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "actix-rt"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92589714878ca59a7626ea19734f0e07a6a875197eec751bb5d3f99e64998c63"
+dependencies = [
+ "futures-core",
+ "tokio",
+]
+
+[[package]]
+name = "actix_derive"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6ac1e58cded18cb28ddc17143c4dea5345b3ad575e14f32f66e4054a56eb271"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -50,6 +106,18 @@ dependencies = [
  "ctr",
  "ghash",
  "subtle",
+]
+
+[[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+ "version_check",
+ "zerocopy",
 ]
 
 [[package]]
@@ -169,6 +237,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-channel"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2"
+dependencies = [
+ "concurrent-queue",
+ "event-listener-strategy",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "async-io"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -195,6 +275,28 @@ dependencies = [
  "event-listener",
  "event-listener-strategy",
  "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -374,6 +476,7 @@ name = "boot-node"
 version = "0.6.0"
 dependencies = [
  "axum",
+ "calimero-network-primitives",
  "camino",
  "clap",
  "eyre",
@@ -415,6 +518,56 @@ name = "bytes"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
+
+[[package]]
+name = "calimero-network-primitives"
+version = "0.0.0"
+dependencies = [
+ "actix",
+ "bytes",
+ "calimero-primitives",
+ "calimero-utils-actix",
+ "either",
+ "eyre",
+ "futures-util",
+ "libp2p",
+ "multiaddr",
+ "rand 0.8.5",
+ "serde",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "calimero-primitives"
+version = "0.0.0"
+dependencies = [
+ "bs58",
+ "ed25519-dalek",
+ "eyre",
+ "multiaddr",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "url",
+]
+
+[[package]]
+name = "calimero-utils-actix"
+version = "0.0.0"
+dependencies = [
+ "actix",
+ "async-stream",
+ "calimero-primitives",
+ "eyre",
+ "futures-util",
+ "itertools",
+ "paste",
+ "tokio",
+]
 
 [[package]]
 name = "camino"
@@ -1074,6 +1227,15 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
@@ -1081,6 +1243,15 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
+dependencies = [
+ "hashbrown 0.14.5",
 ]
 
 [[package]]
@@ -1100,6 +1271,12 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hex_fmt"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b07f60793ff0a4d9cef0f18e63b5357e06209987153a64648c972c1e5aff336f"
 
 [[package]]
 name = "hickory-proto"
@@ -1430,7 +1607,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "equivalent",
- "hashbrown",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -1478,6 +1655,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1521,6 +1707,7 @@ dependencies = [
  "libp2p-connection-limits",
  "libp2p-core",
  "libp2p-dns",
+ "libp2p-gossipsub",
  "libp2p-identify",
  "libp2p-identity",
  "libp2p-kad",
@@ -1631,6 +1818,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "libp2p-gossipsub"
+version = "0.49.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f58e37d8d6848e5c4c9e3c35c6f61133235bff2960c9c00a663b0849301221"
+dependencies = [
+ "async-channel",
+ "asynchronous-codec",
+ "base64",
+ "byteorder",
+ "bytes",
+ "either",
+ "fnv",
+ "futures",
+ "futures-timer",
+ "getrandom 0.2.16",
+ "hashlink",
+ "hex_fmt",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-swarm",
+ "quick-protobuf",
+ "quick-protobuf-codec",
+ "rand 0.8.5",
+ "regex",
+ "sha2",
+ "tracing",
+ "web-time",
+]
+
+[[package]]
 name = "libp2p-identify"
 version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1723,6 +1940,7 @@ checksum = "805a555148522cb3414493a5153451910cb1a146c53ffbf4385708349baf62b7"
 dependencies = [
  "futures",
  "libp2p-core",
+ "libp2p-gossipsub",
  "libp2p-identify",
  "libp2p-identity",
  "libp2p-kad",
@@ -2004,7 +2222,7 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 dependencies = [
- "hashbrown",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -2978,6 +3196,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7664a098b8e616bdfcc2dc0e9ac44eb231eedf41db4e9fe95d8d32ec728dedad"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3240,7 +3467,9 @@ dependencies = [
  "io-uring",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "slab",
  "socket2 0.6.0",
  "tokio-macros",
@@ -3266,6 +3495,7 @@ checksum = "14307c986784f72ef81c89db7d9e28d6ac26d16213b109ea501696195e6e3ce5"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite",
  "tokio",
@@ -3428,6 +3658,7 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]
