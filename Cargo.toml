@@ -38,5 +38,4 @@ tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 
 # Shared crate from calimero-core for AutoNAT v2 behaviour
-# For production, use: calimero-network-primitives = { git = "https://github.com/calimero-network/core", branch = "master" }
-calimero-network-primitives = { path = "../core/crates/network/primitives" }
+calimero-network-primitives = { git = "https://github.com/calimero-network/core", branch = "master" }
