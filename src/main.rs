@@ -1,4 +1,5 @@
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 use clap::Parser;
 use libp2p::futures::prelude::*;
@@ -15,7 +16,22 @@ mod http_service;
 
 const PROTOCOL_VERSION: &str = concat!("/", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const CALIMERO_KAD_PROTO_NAME: StreamProtocol = StreamProtocol::new("/calimero/kad/1.0.0");
-const MAX_RELAY_CIRCUIT_BYTES: u64 = 100 << 20; // 100 MiB
+
+// libp2p `relay::Config::default()` ships with values sized for the test suite,
+// not production: 2-min circuits, 128 KiB per circuit, 16 total circuits, 4
+// circuits-per-peer, 128 total reservations, 4 reservations-per-peer. The
+// per-peer caps in particular bottleneck NAT-bound clients in any non-trivial
+// network. The overrides below size each relay node for ~200 active users
+// holding circuits to ~20 distinct peers each, with sync/state-delta streams
+// allowed to run for an hour and up to 1 GiB per circuit. Tune in lockstep
+// with the EC2 instance size — these settings expect at least `c7g.large`
+// (2 vCPU / 4 GiB) so the per-circuit state fits.
+const MAX_RELAY_CIRCUIT_BYTES: u64 = 1 << 30; // 1 GiB
+const MAX_RELAY_CIRCUIT_DURATION: Duration = Duration::from_secs(60 * 60); // 1 hour
+const MAX_RELAY_CIRCUITS: usize = 4096;
+const MAX_RELAY_CIRCUITS_PER_PEER: usize = 256;
+const MAX_RELAY_RESERVATIONS: usize = 2048;
+const MAX_RELAY_RESERVATIONS_PER_PEER: usize = 8;
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
@@ -132,6 +148,11 @@ async fn main() -> eyre::Result<()> {
                 relay: relay::Behaviour::new(keypair.public().to_peer_id(), {
                     let mut x = relay::Config::default();
                     x.max_circuit_bytes = MAX_RELAY_CIRCUIT_BYTES;
+                    x.max_circuit_duration = MAX_RELAY_CIRCUIT_DURATION;
+                    x.max_circuits = MAX_RELAY_CIRCUITS;
+                    x.max_circuits_per_peer = MAX_RELAY_CIRCUITS_PER_PEER;
+                    x.max_reservations = MAX_RELAY_RESERVATIONS;
+                    x.max_reservations_per_peer = MAX_RELAY_RESERVATIONS_PER_PEER;
                     x
                 }),
             }
