@@ -72,3 +72,56 @@ jobs:
             artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The Docker image bundles the release binaries (built above)
+      # into a debian-slim base and pushes a multi-arch manifest to
+      # GHCR. Downstream consumers (merobox#256+) pull this image
+      # at runtime so they don't have to keep a Dockerfile bundled
+      # in their own tree.
+      #
+      # Layout for buildx context: COPY in the Dockerfile expects
+      # binaries under `artifacts/<docker-arch>/boot-node`, so we
+      # restage the GitHub-release-named binaries into the
+      # docker-arch directory layout before invoking buildx.
+      - name: Stage binaries for Docker build
+        run: |
+          mkdir -p artifacts/amd64 artifacts/arm64
+          cp artifacts/boot-node-x86_64-unknown-linux artifacts/amd64/boot-node
+          cp artifacts/boot-node-aarch64-unknown-linux artifacts/arm64/boot-node
+          chmod +x artifacts/amd64/boot-node artifacts/arm64/boot-node
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tags published per release:
+      #   * <version> (e.g. 0.7.0)   — immutable, pinned by consumers
+      #   * latest                   — current published release
+      #   * edge                     — also tracks latest, matches the
+      #                                naming convention merod uses
+      #                                (`ghcr.io/calimero-network/merod:edge`)
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/calimero-network/boot-node:${{ needs.metadata.outputs.version }}
+            ghcr.io/calimero-network/boot-node:latest
+            ghcr.io/calimero-network/boot-node:edge
+          labels: |
+            org.opencontainers.image.source=https://github.com/calimero-network/boot-node
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.metadata.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
