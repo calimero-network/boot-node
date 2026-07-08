@@ -218,8 +218,12 @@ async fn handle_swarm_behaviour_event(
                 ..
             } = event
             {
-                info!("Adding external address: {observed_addr:?}");
-                swarm.add_external_address(observed_addr);
+                if is_globally_reachable(&observed_addr) {
+                    info!("Adding external address: {observed_addr:?}");
+                    swarm.add_external_address(observed_addr);
+                } else {
+                    info!("Ignoring non-global observed address: {observed_addr:?}");
+                }
             }
         }
         BehaviourEvent::Kad(event) => {
@@ -234,6 +238,41 @@ async fn handle_swarm_behaviour_event(
             info!("Rendezvous event: {event:?}");
         }
         _ => {}
+    }
+}
+
+// Peers on the same LAN/VPC observe this node's private interface address and
+// report it back via identify. Advertising that address as external poisons
+// every relay reservation: clients compose their circuit addresses from the
+// relay's advertised addrs, so a `/ip4/10.x.x.x/.../p2p-circuit` record ends
+// up in rendezvous/Kademlia and is undialable from outside the VPC.
+fn is_globally_reachable(addr: &Multiaddr) -> bool {
+    match addr.iter().next() {
+        Some(multiaddr::Protocol::Ip4(ip)) => {
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast()
+                || ip.is_documentation()
+                // carrier-grade NAT range 100.64.0.0/10 (RFC 6598)
+                || (ip.octets()[0] == 100 && (ip.octets()[1] & 0b1100_0000) == 0b0100_0000))
+        }
+        Some(multiaddr::Protocol::Ip6(ip)) => {
+            !(ip.is_loopback()
+                || ip.is_unspecified()
+                // unique-local fc00::/7
+                || (ip.segments()[0] & 0xfe00) == 0xfc00
+                // link-local fe80::/10
+                || (ip.segments()[0] & 0xffc0) == 0xfe80)
+        }
+        Some(
+            multiaddr::Protocol::Dns(_)
+            | multiaddr::Protocol::Dns4(_)
+            | multiaddr::Protocol::Dns6(_)
+            | multiaddr::Protocol::Dnsaddr(_),
+        ) => true,
+        _ => false,
     }
 }
 
@@ -297,6 +336,54 @@ fn handle_autonat_event(event: autonat_v2::Event) {
         }
         autonat_v2::Event::PeerHasServerSupport { peer_id } => {
             info!(%peer_id, "AutoNAT v2: discovered peer has server support");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_globally_reachable;
+    use libp2p::Multiaddr;
+
+    fn addr(s: &str) -> Multiaddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn rejects_private_and_special_ipv4() {
+        for a in [
+            "/ip4/10.0.8.121/udp/4001/quic-v1",
+            "/ip4/192.168.1.10/tcp/4001",
+            "/ip4/172.16.0.1/tcp/4001",
+            "/ip4/127.0.0.1/tcp/4001",
+            "/ip4/169.254.13.37/tcp/4001",
+            "/ip4/100.64.0.1/tcp/4001",
+            "/ip4/0.0.0.0/tcp/4001",
+        ] {
+            assert!(!is_globally_reachable(&addr(a)), "{a} should be rejected");
+        }
+    }
+
+    #[test]
+    fn rejects_non_global_ipv6() {
+        for a in [
+            "/ip6/::1/tcp/4001",
+            "/ip6/fe80::1/tcp/4001",
+            "/ip6/fd00::1/tcp/4001",
+        ] {
+            assert!(!is_globally_reachable(&addr(a)), "{a} should be rejected");
+        }
+    }
+
+    #[test]
+    fn accepts_global_addresses() {
+        for a in [
+            "/ip4/63.181.86.34/udp/4001/quic-v1",
+            "/ip4/63.181.86.34/tcp/4001",
+            "/ip6/2606:4700::6810:85e5/tcp/4001",
+            "/dns4/boot.calimero.network/tcp/4001",
+        ] {
+            assert!(is_globally_reachable(&addr(a)), "{a} should be accepted");
         }
     }
 }
